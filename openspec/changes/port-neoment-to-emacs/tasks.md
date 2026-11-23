@@ -39,13 +39,13 @@ Phases follow emacs-port.md §20. Each group ships its own ERT tests. `make test
 
 ## 4. Rooms list
 
-- [ ] 4.1 Implement the pure renderer for the header lines (title rule, presence bubble, sync status variants) and empty states; verify with ERT text comparisons for each status case and the 30-column title.
-- [ ] 4.2 Implement section classification, ordering, and section headers with counts and the always/conditional sections; verify with ERT tests for the priority chain and unread-before-recent ordering.
-- [ ] 4.3 Implement room lines (indent, icon, name format options, relative time incl. `dd/mm`, badges with faces, room-space suffix, line/icon faces) and the three last-message preview styles with truncation; verify with ERT text and property assertions against emacs-port.md §9.3.
-- [ ] 4.4 Implement the spaces tree (recursive, joined children only, folded by default) and fold toggling with persistence in `ui_state.json`; verify with ERT tests for TAB on a section, TAB on a space, TAB elsewhere (error message), and state reloaded from disk.
-- [ ] 4.5 Implement `neoment-rooms-mode`, the side window (D11 width, fixed and dedicated, `hl-line`), `neoment-toggle-rooms-list`, and opening rooms in the right-hand window; verify with an ERT test in batch that the toggle creates and deletes the side window, then check the split behaviour manually.
-- [ ] 4.6 Implement list actions `a`/`l` (tag PUT/DELETE with messages), `d` (local direct), `r` (private receipt or marked_unread), `s` (presence prompt), `u` (state refresh), `n`/`p` navigation skipping preview lines, `N` room and `M-n` global notification settings, and the invite RET dialog; verify with mocked ERT tests for request payloads and messages, including the invite-specific errors, and ERT tests for the preview skip and the end-of-list message.
-- [ ] 4.7 Implement the room pickers (item format, prompts, `No open rooms`, customisable functions); verify with an ERT test that formats the items and calls a stub picker function.
+- [x] 4.1 Implement the pure renderer for the header lines (title rule, presence bubble, sync status variants) and empty states; verify with ERT text comparisons for each status case and the 30-column title.
+- [x] 4.2 Implement section classification, ordering, and section headers with counts and the always/conditional sections; verify with ERT tests for the priority chain and unread-before-recent ordering.
+- [x] 4.3 Implement room lines (indent, icon, name format options, relative time incl. `dd/mm`, badges with faces, room-space suffix, line/icon faces) and the three last-message preview styles with truncation; verify with ERT text and property assertions against emacs-port.md §9.3.
+- [x] 4.4 Implement the spaces tree (recursive, joined children only, folded by default) and fold toggling with persistence in `ui_state.json`; verify with ERT tests for TAB on a section, TAB on a space, TAB elsewhere (error message), and state reloaded from disk.
+- [x] 4.5 Implement `neoment-rooms-mode`, the side window (D11 width, fixed and dedicated, `hl-line`), `neoment-toggle-rooms-list`, and opening rooms in the right-hand window; verify with an ERT test in batch that the toggle creates and deletes the side window, then check the split behaviour manually.
+- [x] 4.6 Implement list actions `a`/`l` (tag PUT/DELETE with messages), `d` (local direct), `r` (private receipt or marked_unread), `s` (presence prompt), `u` (state refresh), `n`/`p` navigation skipping preview lines, `N` room and `M-n` global notification settings, and the invite RET dialog; verify with mocked ERT tests for request payloads and messages, including the invite-specific errors, and ERT tests for the preview skip and the end-of-list message.
+- [x] 4.7 Implement the room pickers (item format, prompts, `No open rooms`, customisable functions); verify with an ERT test that formats the items and calls a stub picker function.
 
 ## 5. Read-only room buffer
 

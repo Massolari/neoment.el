@@ -90,6 +90,12 @@
 (defvar neoment--client nil
   "The current `neoment-client', or nil.")
 
+(defvar-local neoment--room-id nil
+  "Id of the room shown in the current buffer.")
+
+(defvar-local neoment--thread-root-id nil
+  "Id of the thread root shown in the current thread buffer.")
+
 (defvar neoment-client-room-changed-functions nil
   "Functions called with a room id when that room changed.")
 

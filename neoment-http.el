@@ -33,6 +33,7 @@
 (require 'cl-lib)
 (require 'json)
 (require 'url-util)
+(require 'url-parse)
 (require 'plz)
 (require 'neoment-client)
 
@@ -280,6 +281,128 @@ current client in the meantime.  RETRIED is non-nil for a resend."
       (if neoment-http-ensure-token-function
           (funcall neoment-http-ensure-token-function client send)
         (funcall send)))))
+
+;;;; Matrix endpoints
+
+(defun neoment-api-uuid ()
+  "Return a random version 4 UUID string."
+  (format "%04x%04x-%04x-4%03x-%x%03x-%04x%04x%04x"
+          (random #x10000) (random #x10000) (random #x10000) (random #x1000)
+          (+ 8 (random 4)) (random #x1000)
+          (random #x10000) (random #x10000) (random #x10000)))
+
+(defun neoment-api-txn-id ()
+  "Return a new transaction id."
+  (concat "neoment-el-" (neoment-api-uuid)))
+
+(defun neoment-api-room-path (room-id &rest segments)
+  "Return the client API path of ROOM-ID followed by SEGMENTS."
+  (concat "/_matrix/client/v3/rooms/" (neoment-api-encode room-id)
+          (mapconcat (lambda (s) (concat "/" (neoment-api-encode s))) segments "")))
+
+(defun neoment-api-send-event (room-id type content callback)
+  "Send an event of TYPE with CONTENT to ROOM-ID.
+CALLBACK receives (:ok EVENT-ID) or (:error ERR)."
+  (neoment-api-request
+   'put (neoment-api-room-path room-id "send" type (neoment-api-txn-id))
+   :json content
+   :callback (lambda (result)
+               (funcall callback
+                        (if (plist-get result :error)
+                            result
+                          (list :ok (alist-get 'event_id (plist-get result :ok))))))))
+
+(defun neoment-api-redact (room-id event-id reason callback)
+  "Redact EVENT-ID in ROOM-ID with REASON and call CALLBACK."
+  (neoment-api-request
+   'put (neoment-api-room-path room-id "redact" event-id (neoment-api-txn-id))
+   :json `((reason . ,(or reason "")))
+   :callback callback))
+
+(defun neoment-api-set-read-markers (room-id markers &optional callback)
+  "Set the read MARKERS of ROOM-ID, updating the local state first.
+MARKERS is a plist with :fully-read, :read and :read-private event
+ids.  CALLBACK, if non-nil, receives the result."
+  (let ((room (neoment-has-room room-id))
+        (fully-read (plist-get markers :fully-read))
+        (read (or (plist-get markers :read) (plist-get markers :read-private))))
+    (when room
+      (when fully-read
+        (setf (neoment-room-fully-read room) fully-read))
+      (when read
+        (let ((message (neoment-room-find-message room read)))
+          (setf (neoment-room-read-receipt room)
+                (list :event-id read
+                      :ts (or (and message (neoment-message-timestamp message))
+                              (neoment--now-ms))
+                      :is-local t))))
+      (setf (neoment-room-unread room) nil))
+    (neoment-api-request
+     'post (neoment-api-room-path room-id "read_markers")
+     :json (delq nil (list (and fully-read (cons 'm.fully_read fully-read))
+                           (and (plist-get markers :read)
+                                (cons 'm.read (plist-get markers :read)))
+                           (and (plist-get markers :read-private)
+                                (cons 'm.read.private
+                                      (plist-get markers :read-private)))))
+     :callback (or callback #'ignore))))
+
+(defun neoment-api-server-name ()
+  "Return the server name of the current user."
+  (let ((user (neoment-user-id)))
+    (if (and user (string-match ":\\(.+\\)\\'" user))
+        (match-string 1 user)
+      (url-host (url-generic-parse-url
+                 (neoment-client-homeserver neoment--client))))))
+
+(defun neoment-api-join (id-or-alias via callback)
+  "Join the room ID-OR-ALIAS through the servers VIA.
+CALLBACK receives (:ok ROOM-ID) or (:error ERR)."
+  (neoment-api-request
+   'post (concat "/_matrix/client/v3/join/" (neoment-api-encode id-or-alias))
+   :query `((via . ,(delete-dups (append (list (neoment-api-server-name) "matrix.org")
+                                         via))))
+   :callback (lambda (result)
+               (if (plist-get result :error)
+                   (funcall callback result)
+                 (let ((room-id (alist-get 'room_id (plist-get result :ok))))
+                   (when room-id
+                     (remhash room-id (neoment-client-invited-rooms neoment--client)))
+                   (funcall callback (list :ok room-id)))))))
+
+(defun neoment-api-leave (room-id callback)
+  "Leave ROOM-ID and call CALLBACK.
+M_FORBIDDEN counts as success.  On success the room is forgotten."
+  (neoment-api-request
+   'post (neoment-api-room-path room-id "leave")
+   :callback (lambda (result)
+               (let ((err (plist-get result :error)))
+                 (if (and err (not (equal (plist-get err :errcode) "M_FORBIDDEN")))
+                     (funcall callback result)
+                   (neoment-remove-room room-id)
+                   (funcall callback (list :ok nil)))))))
+
+(defun neoment-api-set-tag (room-id tag add callback)
+  "Add (when ADD) or remove TAG on ROOM-ID and call CALLBACK."
+  (neoment-api-request
+   (if add 'put 'delete)
+   (format "/_matrix/client/v3/user/%s/rooms/%s/tags/%s"
+           (neoment-api-encode (neoment-user-id)) (neoment-api-encode room-id)
+           (neoment-api-encode tag))
+   :json (and add '((order . 0)))
+   :callback callback))
+
+(defun neoment-api-create-dm (user-id callback)
+  "Create a direct message room with USER-ID.
+CALLBACK receives (:ok ROOM-ID) or (:error ERR)."
+  (neoment-api-request
+   'post "/_matrix/client/v3/createRoom"
+   :json `((invite . [,user-id]) (is_direct . t) (preset . "trusted_private_chat"))
+   :callback (lambda (result)
+               (funcall callback
+                        (if (plist-get result :error)
+                            result
+                          (list :ok (alist-get 'room_id (plist-get result :ok))))))))
 
 (provide 'neoment-http)
 ;;; neoment-http.el ends here

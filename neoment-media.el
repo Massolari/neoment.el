@@ -4,11 +4,532 @@
 
 ;; This file is not part of GNU Emacs.
 
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 ;;; Commentary:
 
-;; Media download and upload for Neoment.
+;; Authenticated media download (only mxc:// URLs, the token only in a
+;; header), inline images and zoom, opening and saving attachments,
+;; uploads, clipboard images and hover popups.
 
 ;;; Code:
+
+(require 'cl-lib)
+(require 'subr-x)
+(require 'mailcap)
+(require 'neoment-config)
+(require 'neoment-client)
+(require 'neoment-http)
+(require 'neoment-events)
+(require 'neoment-notify)
+(require 'neoment-storage)
+(require 'neoment-room)
+
+(declare-function neoment-compose-open "neoment-compose")
+(declare-function neoment-emoji-label "neoment-emoji")
+(declare-function posframe-show "posframe")
+(declare-function posframe-hide "posframe")
+
+;;;; Download
+
+(defvar neoment-media--downloads (make-hash-table :test 'equal)
+  "Callbacks waiting for each file being downloaded.")
+
+(defun neoment-media-sanitize (name)
+  "Return NAME with characters unsafe in file names replaced."
+  (replace-regexp-in-string "[^[:alnum:]._$-]" "_" name))
+
+(defun neoment-media-download (mxc name callback)
+  "Download the media MXC to NAME in the media directory.
+CALLBACK receives (:ok PATH) or (:error ERR).  Only mxc:// URLs are
+fetched, with the token in a header.  A file already present is
+reused and concurrent downloads of the same file are merged."
+  (let ((url (and (neoment-events-mxc-p mxc) (neoment-events-mxc-to-url mxc))))
+    (if (not url)
+        (funcall callback (list :error (list :error "Not homeserver media")))
+      (let ((path (expand-file-name (neoment-media-sanitize name)
+                                    (neoment-storage-media-dir))))
+        (cond
+         ((file-exists-p path) (funcall callback (list :ok path)))
+         ((gethash path neoment-media--downloads)
+          (push callback (gethash path neoment-media--downloads)))
+         (t
+          (puthash path (list callback) neoment-media--downloads)
+          (let ((part (concat path ".part")))
+            (when (file-exists-p part) (delete-file part))
+            (neoment-api-request
+             'get url :as 'file :output-file part
+             :callback
+             (lambda (result)
+               (let ((callbacks (gethash path neoment-media--downloads))
+                     (final nil))
+                 (remhash path neoment-media--downloads)
+                 (if (plist-get result :error)
+                     (progn
+                       (when (file-exists-p part) (delete-file part))
+                       (setq final (list :error (plist-get result :error))))
+                   (rename-file part path t)
+                   (setq final (list :ok path)))
+                 (dolist (cb (reverse callbacks))
+                   (funcall cb final))))))))))))
+
+(defun neoment-media-image-file (mxc callback)
+  "Download the image MXC to a file named after it and call CALLBACK."
+  (neoment-media-download
+   mxc (concat "image-" (substring (secure-hash 'sha256 mxc) 0 32)) callback))
+
+;;;; Inline images
+
+(defvar-local neoment-media--render-tick 0
+  "Counter bumped by each render, so late images are dropped.")
+
+(defun neoment-media--image-attachment (message)
+  "Return the image (or video thumbnail) attachment of MESSAGE, or nil."
+  (let ((attachment (neoment-message-attachment message)))
+    (pcase (plist-get attachment :type)
+      ('image attachment)
+      ((or 'video 'location) (plist-get attachment :thumbnail)))))
+
+(defun neoment-media-image-size (window image-width image-height zoom)
+  "Return (MAX-WIDTH . MAX-HEIGHT) in pixels for an image in WINDOW.
+IMAGE-WIDTH and IMAGE-HEIGHT are the real size, when known.  ZOOM
+allows the full window height instead of 20%."
+  (let* ((char (frame-char-width (window-frame window)))
+         (max-w (* char (max 1 (- (window-width window) neoment-room-header-width 4))))
+         (max-h (* (if zoom 1.0 0.2) (window-pixel-height window))))
+    (cons (truncate (if image-width (min image-width max-w) max-w))
+          (truncate (if image-height (min image-height max-h) max-h)))))
+
+(defun neoment-media--place-image (buffer tick pos file key)
+  "Show the image FILE after the line at POS in BUFFER for message KEY.
+Nothing happens when BUFFER was re-rendered since TICK."
+  (when (and (buffer-live-p buffer)
+             (= tick (buffer-local-value 'neoment-media--render-tick buffer)))
+    (with-current-buffer buffer
+      (let* ((window (get-buffer-window buffer))
+             (message (neoment-room-get-message (neoment-get-room neoment--room-id) key))
+             (attachment (and message (neoment-media--image-attachment message)))
+             (size (and window (neoment-media-image-size
+                                window (plist-get attachment :width)
+                                (plist-get attachment :height)
+                                (member key neoment-room--zoomed))))
+             (image (and size (ignore-errors
+                                (create-image file nil nil :max-width (car size)
+                                              :max-height (cdr size))))))
+        (when image
+          (save-excursion
+            (goto-char pos)
+            (let ((ov (make-overlay (line-end-position) (line-end-position))))
+              (overlay-put ov 'neoment-image key)
+              (overlay-put ov 'after-string
+                           (concat "\n" (make-string neoment-room-header-width ?\s)
+                                   (propertize " " 'display image))))))))))
+
+(defun neoment-media-add-images ()
+  "Add the inline images of the current room buffer (GUI frames only)."
+  (cl-incf neoment-media--render-tick)
+  (remove-overlays (point-min) (point-max) 'neoment-image)
+  (let ((window (get-buffer-window (current-buffer))))
+    (when (and window (display-graphic-p (window-frame window)) (display-images-p))
+      (let ((buffer (current-buffer))
+            (tick neoment-media--render-tick)
+            (room (neoment-get-room neoment--room-id))
+            (pos (point-min)))
+        (while (setq pos (text-property-any pos (point-max) 'neoment-header t))
+          (let* ((key (get-text-property pos 'neoment-message))
+                 (message (and key (neoment-room-get-message room key)))
+                 (image (and message (neoment-media--image-attachment message)))
+                 (mxc (plist-get image :mxc-url))
+                 (line-start pos))
+            (when (neoment-events-mxc-p mxc)
+              (neoment-media-image-file
+               mxc (lambda (result)
+                     (when (plist-get result :ok)
+                       (neoment-media--place-image buffer tick line-start
+                                                   (plist-get result :ok) key)))))
+            (setq pos (or (next-single-property-change pos 'neoment-header) (point-max)))))))))
+
+(setq neoment-room-image-function #'neoment-media-add-images)
+
+(defun neoment-room-toggle-image-zoom ()
+  "Toggle the inline image of the current line between 20% and full height."
+  (interactive)
+  (let* ((key (get-text-property (line-beginning-position) 'neoment-message))
+         (has-image (seq-find (lambda (ov) (equal (overlay-get ov 'neoment-image) key))
+                              (overlays-in (line-beginning-position)
+                                           (min (point-max) (1+ (line-end-position)))))))
+    (if (not (and key has-image))
+        (neoment-notify--message "No image on this line")
+      (setq neoment-room--zoomed
+            (if (member key neoment-room--zoomed)
+                (delete key neoment-room--zoomed)
+              (cons key neoment-room--zoomed)))
+      (neoment-room-render-buffer))))
+
+;;;; Open and save
+
+(defun neoment-media--system-open (target)
+  "Open TARGET (a file or URL) with the system program."
+  (cond
+   ((string-match-p "\\`https?://" target) (browse-url target))
+   ((eq system-type 'darwin) (call-process "open" nil 0 nil target))
+   ((eq system-type 'windows-nt) (w32-shell-execute "open" target))
+   (t (call-process "xdg-open" nil 0 nil target))))
+
+(declare-function w32-shell-execute "w32fns.c")
+
+(defun neoment-media-default-open-handler (path attachment)
+  "Open PATH for ATTACHMENT: audio plays in `mpv', the rest in the system program."
+  (if (and (eq (plist-get attachment :type) 'audio) (executable-find "mpv"))
+      (let ((buffer (get-buffer-create "*neoment-mpv*")))
+        (with-current-buffer buffer
+          (let ((inhibit-read-only t)) (erase-buffer)))
+        (make-process :name "neoment-mpv" :buffer buffer
+                      :command (list "mpv" "--no-video" path)
+                      :noquery t)
+        (display-buffer buffer '((display-buffer-below-selected) (window-height . 3))))
+    (neoment-media--system-open path)))
+
+(defun neoment-media--call-handler (path attachment)
+  "Call `neoment-on-open-attachment-function' with PATH and ATTACHMENT."
+  (funcall neoment-on-open-attachment-function path attachment))
+
+(defun neoment-media--mxc-at-point ()
+  "Return (MXC TITLE ORIGIN) for an mxc emoticon or reaction at point."
+  (let ((emoticon (get-text-property (point) 'neoment-emoticon))
+        (reaction (get-text-property (point) 'neoment-reaction)))
+    (cond
+     ((and emoticon (neoment-events-mxc-p (plist-get emoticon :url)))
+      (list (plist-get emoticon :url) (plist-get emoticon :title) 'emoticon))
+     ((and reaction (neoment-events-mxc-p (plist-get reaction :key)))
+      (list (plist-get reaction :key) (plist-get reaction :key) 'reaction)))))
+
+(defun neoment-media--attachment-file-name (message)
+  "Return the media file name of MESSAGE's attachment."
+  (concat (neoment-message-effective-id message)
+          (or (plist-get (neoment-message-attachment message) :filename) "")))
+
+(defun neoment-room-open-attachment ()
+  "Open the attachment, emoticon or reaction under the cursor."
+  (interactive)
+  (let ((mxc (neoment-media--mxc-at-point)))
+    (if mxc
+        (pcase-let ((`(,url ,title ,origin) mxc))
+          (let ((name (concat (neoment-media-sanitize title) ".png")))
+            (neoment-media-download
+             url name
+             (lambda (result)
+               (if (plist-get result :error)
+                   (neoment-notify--error
+                    (concat "Error fetching attachment: "
+                            (neoment-http-error-message (plist-get result :error))))
+                 (neoment-media--call-handler
+                  (plist-get result :ok)
+                  (list :type 'image :mimetype "image/png"
+                        :url (neoment-events-mxc-to-url url) :mxc-url url
+                        :filename name :origin origin)))))))
+      (let* ((message (neoment-room-message-at-point))
+             (attachment (and message (neoment-message-attachment message))))
+        (cond
+         ((null message))
+         ((null attachment) (neoment-notify--message "No attachment on this message"))
+         ((eq (plist-get attachment :type) 'location)
+          (if (plist-get attachment :url)
+              (neoment-media--call-handler (plist-get attachment :url)
+                                           (append (list :origin 'message) attachment))
+            (neoment-notify--message "No URL for this location attachment")))
+         (t
+          (let ((filename (or (plist-get attachment :filename) "attachment")))
+            (neoment-notify--message (format "Fetching attachment %s..." filename))
+            (neoment-media-download
+             (plist-get attachment :mxc-url) (neoment-media--attachment-file-name message)
+             (lambda (result)
+               (if (plist-get result :error)
+                   (neoment-notify--error
+                    (concat "Error fetching attachment: "
+                            (neoment-http-error-message (plist-get result :error))))
+                 (neoment-notify--message (format "Opening attachment %s..." filename))
+                 (neoment-media--call-handler
+                  (plist-get result :ok)
+                  (append (list :origin 'message) attachment))))))))))))
+
+(defun neoment-media-free-name (path)
+  "Return PATH, or the first free \"name(N).ext\" next to it."
+  (if (not (file-exists-p path))
+      path
+    (let* ((dir (file-name-directory path))
+           (base (file-name-sans-extension (file-name-nondirectory path)))
+           (ext (file-name-extension path t))
+           (n 1)
+           candidate)
+      (while (file-exists-p (setq candidate (expand-file-name (format "%s(%d)%s" base n ext) dir)))
+        (cl-incf n))
+      candidate)))
+
+(defun neoment-media-save-target (input filename)
+  "Return the path where to save FILENAME given the user INPUT, or nil.
+A directory gets FILENAME appended.  An existing file is overwritten
+only when the user agrees, otherwise a free name is picked."
+  (let* ((path (expand-file-name input)))
+    (when (or (file-directory-p path) (string-suffix-p "/" input))
+      (setq path (expand-file-name filename path)))
+    (if (and (file-exists-p path) (not (y-or-n-p (concat "File exists." " Overwrite? "))))
+        (neoment-media-free-name path)
+      path)))
+
+(defun neoment-room-save-attachment ()
+  "Save the attachment of the message under the cursor."
+  (interactive)
+  (let* ((message (neoment-room-message-at-point))
+         (attachment (and message (neoment-message-attachment message))))
+    (cond
+     ((null message))
+     ((or (null attachment) (null (plist-get attachment :mxc-url)))
+      (neoment-notify--message "No attachment on this message"))
+     (t
+      (let* ((filename (or (plist-get attachment :filename) "attachment"))
+             (input (read-file-name "Save attachment to: " nil "" nil filename)))
+        (if (string-empty-p input)
+            (neoment-notify--message "Save location not provided")
+          (let ((target (neoment-media-save-target input filename)))
+            (neoment-media-download
+             (plist-get attachment :mxc-url) (neoment-media--attachment-file-name message)
+             (lambda (result)
+               (if (plist-get result :error)
+                   (neoment-notify--error
+                    (concat "Error fetching attachment: "
+                            (neoment-http-error-message (plist-get result :error))))
+                 (copy-file (plist-get result :ok) target t)
+                 (neoment-notify--message (concat "Attachment saved to " target))))))))))))
+
+;;;; Upload
+
+(defun neoment-media-mimetype (file)
+  "Return the mime type of FILE."
+  (or (mailcap-file-name-to-mime-type file)
+      (and (executable-find "file")
+           (let ((out (string-trim (with-output-to-string
+                                     (call-process "file" nil standard-output nil
+                                                   "--mime-type" "-b" file)))))
+             (and (string-match-p "/" out) out)))
+      "application/octet-stream"))
+
+(defun neoment-media-upload (file callback)
+  "Upload FILE and call CALLBACK with (:ok ATTACHMENT) or (:error ERR)."
+  (let ((mimetype (neoment-media-mimetype file))
+        (filename (file-name-nondirectory file)))
+    (neoment-api-request
+     'post "/_matrix/media/v3/upload"
+     :query `((filename . ,filename))
+     :body-file file :content-type mimetype
+     :callback
+     (lambda (result)
+       (funcall callback
+                (if (plist-get result :error)
+                    result
+                  (list :ok (list :filename filename
+                                  :url (alist-get 'content_uri (plist-get result :ok))
+                                  :mimetype mimetype
+                                  :size (file-attribute-size (file-attributes file))))))))))
+
+(defun neoment-media--upload-and-compose (file room-id thread-root-id &optional window)
+  "Upload FILE and open a compose buffer for ROOM-ID with it.
+THREAD-ROOT-ID is the thread; WINDOW is the room window."
+  (neoment-media-upload
+   file
+   (lambda (result)
+     (if (plist-get result :error)
+         (neoment-notify--error
+          (concat "Error uploading file: "
+                  (neoment-http-error-message (plist-get result :error))))
+       (require 'neoment-compose)
+       (when (window-live-p window) (select-window window))
+       (neoment-compose-open room-id :thread-root-id thread-root-id
+                             :attachment (plist-get result :ok))))))
+
+(defun neoment-room-upload ()
+  "Upload a file and compose a message with it."
+  (interactive)
+  (let ((file (expand-file-name (read-file-name "Enter file path: " nil nil t))))
+    (if (not (file-regular-p file))
+        (neoment-notify--error (concat "File does not exist: " file))
+      (neoment-media--upload-and-compose file neoment--room-id neoment--thread-root-id
+                                         (selected-window)))))
+
+;;;; Clipboard
+
+(defun neoment-media--run (program &rest args)
+  "Run PROGRAM with ARGS.  Return (STATUS . OUTPUT)."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (let ((status (apply #'call-process program nil (list t nil) nil args)))
+      (cons status (buffer-string)))))
+
+(defun neoment-media--write-bytes (bytes file)
+  "Write the unibyte string BYTES to FILE.  Return non-nil on success."
+  (condition-case nil
+      (let ((coding-system-for-write 'binary))
+        (with-temp-file file
+          (set-buffer-multibyte nil)
+          (insert bytes))
+        (> (file-attribute-size (file-attributes file)) 0))
+    (error nil)))
+
+(defun neoment-media-clipboard-png (file)
+  "Save the clipboard image as PNG to FILE.
+Return nil on success, or the error message."
+  (let ((gui (and (display-graphic-p)
+                  (ignore-errors (gui-get-selection 'CLIPBOARD 'image/png)))))
+    (cond
+     ((and (stringp gui) (> (length gui) 0))
+      (if (neoment-media--write-bytes (if (multibyte-string-p gui) (encode-coding-string gui (quote binary)) gui) file)
+          nil
+        "Failed to save clipboard image to temporary file"))
+     ((eq system-type 'darwin)
+      (if (executable-find "pngpaste")
+          (if (zerop (car (neoment-media--run "pngpaste" file)))
+              nil
+            "No image found in clipboard")
+        (let ((out (decode-coding-string
+                    (cdr (neoment-media--run "osascript" "-e"
+                                             "get the clipboard as «class PNGf»"))
+                    'utf-8)))
+          (if (string-match "«data PNGf\\([0-9A-Fa-f]+\\)»" out)
+              (if (neoment-media--write-bytes
+                   (let ((hex (match-string 1 out)))
+                     (apply #'unibyte-string
+                            (cl-loop for i from 0 below (length hex) by 2
+                                     collect (string-to-number (substring hex i (+ i 2)) 16))))
+                   file)
+                  nil
+                "Failed to save clipboard image to temporary file")
+            "No image found in clipboard"))))
+     ((memq system-type '(gnu/linux berkeley-unix gnu/kfreebsd))
+      (cond
+       ((and (getenv "WAYLAND_DISPLAY") (executable-find "wl-paste"))
+        (if (not (string-search "image/png" (cdr (neoment-media--run "wl-paste" "--list-types"))))
+            "No image found in clipboard"
+          (if (neoment-media--write-bytes
+               (cdr (neoment-media--run "wl-paste" "--type" "image/png")) file)
+              nil
+            "Failed to save clipboard image to temporary file")))
+       ((not (executable-find "xclip"))
+        "The 'xclip' command is not available. Install with your package manager.")
+       ((not (string-search "image/png" (cdr (neoment-media--run "xclip" "-selection" "clipboard"
+                                                                 "-t" "TARGETS" "-o"))))
+        "No image found in clipboard")
+       ((neoment-media--write-bytes
+         (cdr (neoment-media--run "xclip" "-selection" "clipboard" "-t" "image/png" "-o")) file)
+        nil)
+       (t "Failed to save clipboard image to temporary file")))
+     ((eq system-type 'windows-nt)
+      (let ((script (format "Add-Type -AssemblyName System.Windows.Forms; $i = [System.Windows.Forms.Clipboard]::GetImage(); if ($i -eq $null) { exit 1 }; $i.Save('%s', [System.Drawing.Imaging.ImageFormat]::Png)" file)))
+        (if (zerop (car (neoment-media--run "powershell" "-NoProfile" "-Command" script)))
+            nil
+          "No image found in clipboard")))
+     (t "Clipboard image upload not supported on this platform"))))
+
+(defun neoment-room-upload-clipboard-image ()
+  "Upload the clipboard image and compose a message with it."
+  (interactive)
+  (let* ((file (make-temp-file "neoment-clipboard-" nil ".png"))
+         (error-message (neoment-media-clipboard-png file)))
+    (if error-message
+        (progn (ignore-errors (delete-file file))
+               (neoment-notify--error error-message))
+      (neoment-media--upload-and-compose file neoment--room-id neoment--thread-root-id
+                                         (selected-window)))))
+
+;;;; Hover popups
+
+(defvar neoment-media-popup-delay 0.5
+  "Idle seconds before a popup is shown.")
+
+(defvar neoment-media--popup-timer nil
+  "Timer of the pending popup.")
+
+(defvar-local neoment-media--popup-pos nil
+  "Position the popup was shown for.")
+
+(defconst neoment-media--posframe-buffer " *neoment-popup*"
+  "Buffer of the posframe popup.")
+
+(defun neoment-media-popup-text (props)
+  "Return the popup text for the text PROPS at point, or nil."
+  (let ((reaction (plist-get props 'neoment-reaction))
+        (emoticon (plist-get props 'neoment-emoticon)))
+    (cond
+     (reaction
+      (require 'neoment-emoji)
+      (let ((key (plist-get reaction :key)))
+        (concat (propertize (or (neoment-emoji-label key) key) 'face 'bold)
+                "\n\n"
+                (mapconcat #'neoment-display-name (plist-get reaction :senders) "\n"))))
+     (emoticon
+      (propertize (plist-get emoticon :title) 'face 'bold)))))
+
+(defun neoment-media--hide-popup ()
+  "Hide the popup."
+  (when (and (featurep 'posframe) (get-buffer neoment-media--posframe-buffer))
+    (posframe-hide neoment-media--posframe-buffer)))
+
+(defun neoment-media--show-popup (buffer pos)
+  "Show the popup for POS in BUFFER if point is still there."
+  (setq neoment-media--popup-timer nil)
+  (when (and (buffer-live-p buffer) (eq buffer (current-buffer)) (= (point) pos))
+    (let* ((props (text-properties-at pos))
+           (text (neoment-media-popup-text props)))
+      (when text
+        (setq neoment-media--popup-pos pos)
+        (if (and (display-graphic-p) (require 'posframe nil t))
+            (let ((mxc (or (plist-get (plist-get props 'neoment-emoticon) :url)
+                           (let ((key (plist-get (plist-get props 'neoment-reaction) :key)))
+                             (and (neoment-events-mxc-p key) key)))))
+              (posframe-show neoment-media--posframe-buffer :string text :position pos
+                             :border-width 1 :internal-border-width 1)
+              (when (neoment-events-mxc-p mxc)
+                (neoment-media-image-file
+                 mxc (lambda (result)
+                       (when (and (plist-get result :ok) (buffer-live-p buffer)
+                                  (eq buffer (current-buffer)) (= (point) pos))
+                         (let ((image (ignore-errors
+                                        (create-image (plist-get result :ok) nil nil
+                                                      :max-height (* 8 (frame-char-height))))))
+                           (when image
+                             (posframe-show neoment-media--posframe-buffer
+                                            :string (concat text "\n"
+                                                            (propertize " " 'display image))
+                                            :position pos))))))))
+          (message "%s" text))))))
+
+(defun neoment-media--post-command ()
+  "Hide the popup when point moved, and schedule a new one."
+  (unless (equal neoment-media--popup-pos (point))
+    (when neoment-media--popup-pos
+      (setq neoment-media--popup-pos nil)
+      (neoment-media--hide-popup))
+    (when (timerp neoment-media--popup-timer)
+      (cancel-timer neoment-media--popup-timer))
+    (setq neoment-media--popup-timer
+          (run-with-idle-timer neoment-media-popup-delay nil
+                               #'neoment-media--show-popup (current-buffer) (point)))))
+
+(defun neoment-media--setup-room-buffer ()
+  "Enable hover popups in the current room buffer."
+  (add-hook 'post-command-hook #'neoment-media--post-command nil t))
+
+(add-hook 'neoment-room-mode-hook #'neoment-media--setup-room-buffer)
 
 (provide 'neoment-media)
 ;;; neoment-media.el ends here

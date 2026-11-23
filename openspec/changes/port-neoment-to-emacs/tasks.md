@@ -76,12 +76,12 @@ Phases follow emacs-port.md §20. Each group ships its own ERT tests. `make test
 
 ## 8. Media
 
-- [ ] 8.1 Implement `neoment-media.el`: authenticated download to the media dir, mxc-keyed image cache, and the mxc-only guard; verify with mocked ERT tests for the cache hit and for refusing a non-mxc URL.
-- [ ] 8.2 Implement inline images (GUI only, column 31, width/height limits, dropped if the buffer re-renders first) and `z` zoom; verify manually in a GUI frame, and with an ERT test that TTY rendering shows only the bubble.
-- [ ] 8.3 Implement `o` open (emoticon/reaction/message/location paths and messages) and the default handler (mpv 3-line window, otherwise system opener); verify with a mocked ERT test that the handler receives the right path and origin.
-- [ ] 8.4 Implement `s` save with the overwrite prompt and the `name(N).ext` fallback; verify with ERT tests in a temp dir.
-- [ ] 8.5 Implement `u` upload (mimetype detection via `mailcap` with a `file` fallback, `/upload` request, compose with the attachment) and `U` clipboard upload per platform with its error messages; verify with mocked ERT tests and manually check a clipboard paste on macOS/Linux.
-- [ ] 8.6 Implement hover popups (idle timer, reaction label plus reactors, emoticon image, posframe with echo-area fallback, close on move); verify with an ERT test of the popup text builder and check posframe manually.
+- [x] 8.1 Implement `neoment-media.el`: authenticated download to the media dir, mxc-keyed image cache, and the mxc-only guard; verify with mocked ERT tests for the cache hit and for refusing a non-mxc URL.
+- [x] 8.2 Implement inline images (GUI only, column 31, width/height limits, dropped if the buffer re-renders first) and `z` zoom; verify manually in a GUI frame, and with an ERT test that TTY rendering shows only the bubble.
+- [x] 8.3 Implement `o` open (emoticon/reaction/message/location paths and messages) and the default handler (mpv 3-line window, otherwise system opener); verify with a mocked ERT test that the handler receives the right path and origin.
+- [x] 8.4 Implement `s` save with the overwrite prompt and the `name(N).ext` fallback; verify with ERT tests in a temp dir.
+- [x] 8.5 Implement `u` upload (mimetype detection via `mailcap` with a `file` fallback, `/upload` request, compose with the attachment) and `U` clipboard upload per platform with its error messages; verify with mocked ERT tests and manually check a clipboard paste on macOS/Linux.
+- [x] 8.6 Implement hover popups (idle timer, reaction label plus reactors, emoticon image, posframe with echo-area fallback, close on move); verify with an ERT test of the popup text builder and check posframe manually.
 
 ## 9. Spaces and room info
 

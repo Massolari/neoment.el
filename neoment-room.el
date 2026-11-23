@@ -55,6 +55,9 @@
   "Time zone used for message times, as for `format-time-string'.
 nil means local time.")
 
+(defvar neoment-room--skip-mark-read nil
+  "Non-nil while a render must not mark the room as read.")
+
 (defvar neoment-room-image-function nil
   "Function called to add inline images after a render.
 It is called in the room buffer with no argument.")
@@ -448,7 +451,35 @@ DELETE is passed on to `buffer-substring--filter'."
 
 (defvar-keymap neoment-room-mode-map
   :doc "Keymap of `neoment-room-mode'."
-  :parent special-mode-map)
+  :parent special-mode-map
+  "RET" #'neoment-room-compose
+  "r" #'neoment-room-reply
+  "e" #'neoment-room-edit
+  "t" #'neoment-room-open-thread
+  "n" #'neoment-room-next-message
+  "p" #'neoment-room-previous-message
+  "a" #'neoment-room-react-emoji
+  "A" #'neoment-room-react-text
+  "d" #'neoment-room-redact
+  "w" #'neoment-room-forward
+  "R" #'neoment-room-goto-replied
+  "m" #'neoment-room-set-read-marker
+  "V" #'neoment-room-show-event
+  "P" #'neoment-room-load-previous
+  "L" #'neoment-room-leave
+  "o" #'neoment-room-open-attachment
+  "s" #'neoment-room-save-attachment
+  "u" #'neoment-room-upload
+  "U" #'neoment-room-upload-clipboard-image
+  "z" #'neoment-room-toggle-image-zoom
+  "i" #'neoment-room-show-info
+  "N" #'neoment-room-notification-settings
+  "f" #'neoment-pick-room
+  "F" #'neoment-pick-open-room
+  "l" #'neoment-toggle-rooms-list
+  "q" #'neoment-room-quit
+  "g" #'revert-buffer
+  "?" #'describe-mode)
 
 (define-derived-mode neoment-room-mode special-mode "Neoment Room"
   "Major mode for Neoment room and thread buffers.
@@ -517,7 +548,8 @@ DELETE is passed on to `buffer-substring--filter'."
            (neoment--bubble-edges (neoment-faces-bubble-edges
                                    (and windows (window-frame (car windows))))))
       (when (and (eq (current-buffer) (window-buffer (selected-window)))
-                 (not neoment--thread-root-id))
+                 (not neoment--thread-root-id)
+                 (not neoment-room--skip-mark-read))
         (neoment-room-mark-read neoment--room-id))
       (erase-buffer)
       (insert (neoment-room-render neoment--room-id neoment--thread-root-id))
@@ -685,6 +717,396 @@ CALLBACK, if non-nil, is called with (:ok nil) or (:error ERR)."
   "Load more history in the current room."
   (interactive)
   (neoment-room-load-more neoment--room-id))
+
+;;;; Message actions
+
+(defun neoment-room-message-at-point (&optional silent)
+  "Return the message owning the current line.
+Show `No message under the cursor' and return nil when there is none,
+unless SILENT."
+  (let* ((key (get-text-property (line-beginning-position) 'neoment-message))
+         (room (and neoment--room-id (neoment-has-room neoment--room-id)))
+         (message (and key room (neoment-room-get-message room key))))
+    (or message
+        (progn (unless silent (neoment-notify--message "No message under the cursor"))
+               nil))))
+
+(defun neoment-room--move-message (direction)
+  "Move to the header of the next message in DIRECTION (1 or -1)."
+  (let ((current (get-text-property (line-beginning-position) 'neoment-message))
+        (target nil))
+    (save-excursion
+      (forward-line 0)
+      (while (and (not target)
+                  (let ((before (point)))
+                    (and (zerop (forward-line direction)) (bolp) (/= before (point)))))
+        (let ((props (text-properties-at (point))))
+          (when (and (plist-get props 'neoment-header)
+                     (not (plist-get props 'neoment-state))
+                     (not (and (> direction 0)
+                               (equal (plist-get props 'neoment-message) current))))
+            (setq target (point))))))
+    (if target
+        (goto-char target)
+      (neoment-notify--message "No more messages in this direction"))))
+
+(defun neoment-room-next-message ()
+  "Move to the header of the next message."
+  (interactive)
+  (neoment-room--move-message 1))
+
+(defun neoment-room-previous-message ()
+  "Move to the header of the previous message."
+  (interactive)
+  (neoment-room--move-message -1))
+
+(declare-function neoment-compose-open "neoment-compose")
+(declare-function neoment-room-open-attachment "neoment-media")
+(declare-function neoment-room-save-attachment "neoment-media")
+(declare-function neoment-room-upload "neoment-media")
+(declare-function neoment-room-upload-clipboard-image "neoment-media")
+(declare-function neoment-room-toggle-image-zoom "neoment-media")
+
+(defun neoment-room-compose ()
+  "Write a new message (to the thread, in a thread buffer)."
+  (interactive)
+  (require 'neoment-compose)
+  (neoment-compose-open neoment--room-id :thread-root-id neoment--thread-root-id))
+
+(defun neoment-room-reply ()
+  "Reply to the message under the cursor."
+  (interactive)
+  (let ((message (neoment-room-message-at-point)))
+    (when message
+      (require 'neoment-compose)
+      (neoment-compose-open neoment--room-id
+                            :thread-root-id neoment--thread-root-id
+                            :relation (list :type 'reply :message message)))))
+
+(defun neoment-room-edit ()
+  "Edit the message under the cursor, which must be the user's own."
+  (interactive)
+  (let ((message (neoment-room-message-at-point)))
+    (when message
+      (if (not (equal (neoment-message-sender message) (neoment-user-id)))
+          (neoment-notify--error "You can only edit your own messages")
+        (require 'neoment-compose)
+        (neoment-compose-open neoment--room-id
+                              :thread-root-id neoment--thread-root-id
+                              :relation (list :type 'replace :message message))))))
+
+(defun neoment-room-open-thread-buffer (room-id root-id)
+  "Show the thread ROOT-ID of ROOM-ID in a window to the right."
+  (let ((existing (neoment-room--find-buffer room-id root-id)))
+    (if (and existing (get-buffer-window existing))
+        (select-window (get-buffer-window existing))
+      (let* ((root (neoment-room-get-message (neoment-get-room room-id) root-id))
+             (buffer (or existing
+                         (generate-new-buffer
+                          (neoment-room-thread-buffer-name
+                           root-id (neoment-display-name
+                                    (and root (neoment-message-sender root))))))))
+        (unless existing
+          (neoment-room--setup-buffer
+           buffer room-id root-id
+           (concat (make-string 28 ?\s) (neoment-room--separator) "Loading thread...")))
+        (let ((window (display-buffer buffer '((display-buffer-in-direction)
+                                               (direction . right)
+                                               (window-width . 50)))))
+          (when window (select-window window)))
+        (neoment-ui-schedule buffer #'neoment-room-render-buffer)
+        buffer))))
+
+(defun neoment-room-open-thread ()
+  "Open the thread of the message under the cursor, or start one on it."
+  (interactive)
+  (let ((message (neoment-room-message-at-point)))
+    (when message
+      (let ((root-id (if (and (neoment-message-thread-replies-count message)
+                              (> (neoment-message-thread-replies-count message) 0))
+                         (neoment-message-effective-id message)
+                       (neoment-message-thread-root-id message))))
+        (if root-id
+            (neoment-room-open-thread-buffer neoment--room-id root-id)
+          (require 'neoment-compose)
+          (neoment-compose-open neoment--room-id
+                                :thread-root-id (neoment-message-effective-id message)))))))
+
+(declare-function neoment-emoji-list "neoment-emoji")
+
+(defun neoment-room-react (message key)
+  "Toggle the reaction KEY of the user on MESSAGE in the current room."
+  (let* ((room-id neoment--room-id)
+         (user (neoment-user-id))
+         (own (seq-find (lambda (entry) (equal (cdr entry) user))
+                        (cdr (assoc key (neoment-message-reactions message))))))
+    (if own
+        (neoment-api-redact room-id (car own) nil
+                            (lambda (result)
+                              (if (plist-get result :error)
+                                  (neoment-notify--error
+                                   (concat "Error removing reaction: "
+                                           (neoment-http-error-message (plist-get result :error))))
+                                (neoment-room-refresh room-id))))
+      (neoment-api-send-event
+       room-id "m.reaction"
+       `((m.relates_to . ((rel_type . "m.annotation")
+                          (event_id . ,(neoment-message-effective-id message))
+                          (key . ,key))))
+       (lambda (result)
+         (if (plist-get result :error)
+             (neoment-notify--error
+              (concat "Error sending reaction: "
+                      (neoment-http-error-message (plist-get result :error))))
+           (neoment-room-refresh room-id)))))))
+
+(defun neoment-room-react-emoji ()
+  "React to the message under the cursor with an emoji."
+  (interactive)
+  (let ((message (neoment-room-message-at-point)))
+    (when message
+      (require 'neoment-emoji)
+      (let* ((table (neoment-emoji-list))
+             (choice (completing-read "Select reaction: " table nil t))
+             (emoji (cdr (assoc choice table))))
+        (when emoji
+          (neoment-room-react message emoji))))))
+
+(defun neoment-room-react-text ()
+  "React to the message under the cursor with free text."
+  (interactive)
+  (let ((message (neoment-room-message-at-point)))
+    (when message
+      (let ((text (read-string "Enter reaction: ")))
+        (unless (string-empty-p text)
+          (neoment-room-react message text))))))
+
+(defun neoment-room-redact ()
+  "Redact the message under the cursor."
+  (interactive)
+  (let ((message (neoment-room-message-at-point))
+        (room-id neoment--room-id))
+    (when message
+      (let ((reason (read-string "Redact message reason: ")))
+        (neoment-api-redact room-id (neoment-message-effective-id message) reason
+                            (lambda (result)
+                              (if (plist-get result :error)
+                                  (neoment-notify--error
+                                   (concat "Error redacting message: "
+                                           (neoment-http-error-message
+                                            (plist-get result :error))))
+                                (neoment-room-refresh room-id))))))))
+
+(defun neoment-room-set-read-marker ()
+  "Move the read marker to the message under the cursor."
+  (interactive)
+  (let ((message (neoment-room-message-at-point))
+        (room-id neoment--room-id))
+    (when message
+      (let ((id (neoment-message-effective-id message)))
+        (neoment-api-set-read-markers room-id (list :read id :fully-read id))
+        (let ((neoment-room--skip-mark-read t))
+          (neoment-room-render-buffer))))))
+
+(declare-function neoment-compose-send "neoment-compose")
+
+(defun neoment-room-forward ()
+  "Forward the message under the cursor to another room."
+  (interactive)
+  (let ((message (neoment-room-message-at-point)))
+    (when message
+      (require 'neoment-compose)
+      (neoment-rooms-pick
+       (mapcar #'neoment-room-id (neoment-rooms--member-rooms))
+       "Forward to room: "
+       (lambda (target)
+         (let* ((attachment (neoment-message-attachment message))
+                (mxc (plist-get attachment :mxc-url)))
+           (neoment-compose-send
+            target (neoment-room--body-text message)
+            :attachment (and (neoment-events-mxc-p mxc)
+                             (list :filename (plist-get attachment :filename)
+                                   :url mxc
+                                   :mimetype (plist-get attachment :mimetype)
+                                   :size (plist-get attachment :size))))
+           (neoment-notify--message
+            (format "Message forwarded to %s" (neoment-room-display-name target)))
+           (neoment-room-open target)))))))
+
+(defun neoment-room-show-event ()
+  "Show the raw event of the message under the cursor."
+  (interactive)
+  (let ((message (neoment-room-message-at-point)))
+    (when message
+      (let* ((room (neoment-get-room neoment--room-id))
+             (id (neoment-message-effective-id message))
+             (event (or (gethash id (neoment-room-events room))
+                        (gethash (neoment-message-id message) (neoment-room-events room)))))
+        (if (not event)
+            (neoment-notify--message "Event not found for this message")
+          (let ((buffer (get-buffer-create (format "*Event: %s*" id))))
+            (with-current-buffer buffer
+              (let ((inhibit-read-only t))
+                (erase-buffer)
+                (insert (neoment-json-encode event))
+                (json-pretty-print-buffer)
+                (goto-char (point-min)))
+              (if (fboundp 'js-json-mode) (js-json-mode) (js-mode))
+              (setq header-line-format (format "Event: %s" id))
+              (view-mode 1)
+              (local-set-key (kbd "q") #'quit-window))
+            (pop-to-buffer buffer '((display-buffer-at-bottom)))))))))
+
+;;;; Go to replied message
+
+(defun neoment-room--goto-message (id)
+  "Move point to the message ID (or original id ID).  Return non-nil if found."
+  (let ((pos (text-property-any (point-min) (point-max) 'neoment-message id)))
+    (unless pos
+      (let ((room (neoment-get-room neoment--room-id)))
+        (maphash (lambda (key m)
+                   (when (and (not pos) (equal (neoment-message-id m) id))
+                     (setq pos (text-property-any (point-min) (point-max)
+                                                  'neoment-message key))))
+                 (neoment-room-messages room))))
+    (when pos
+      (push-mark)
+      (goto-char pos)
+      (neoment-notify--message "Found replied message")
+      t)))
+
+(defun neoment-room--load-and-find (buffer id)
+  "Load history in BUFFER until the message ID is found, asking each time."
+  (with-current-buffer buffer
+    (let ((room-id neoment--room-id))
+      (if (eq (neoment-room-prev-batch (neoment-get-room room-id)) 'end)
+          (neoment-notify--message "The replied message was not found in the room history" 'warn)
+        (neoment-room-load-history
+         room-id
+         (lambda (result)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer
+               (if (plist-get result :error)
+                   (neoment-notify--error
+                    (concat "Error loading more messages: "
+                            (neoment-http-error-message (plist-get result :error))))
+                 (neoment-room-render-buffer)
+                 (unless (neoment-room--goto-message id)
+                   (if (eq (neoment-room-prev-batch (neoment-get-room room-id)) 'end)
+                       (neoment-notify--message
+                        "The replied message was not found in the room history" 'warn)
+                     (when (y-or-n-p (concat "The replied message was not found." " Load more messages? "))
+                       (neoment-room--load-and-find buffer id)))))))))))))
+
+(defun neoment-room-goto-replied ()
+  "Jump to the message replied to by the message under the cursor."
+  (interactive)
+  (let ((message (neoment-room-message-at-point)))
+    (when message
+      (let ((replied (neoment-message-replying-to message)))
+        (cond
+         ((null replied)
+          (neoment-notify--error "This message is not replying to another message"))
+         ((neoment-room--goto-message (neoment-message-id replied)))
+         ((y-or-n-p (concat "The replied message is older than the loaded messages." " Load more messages? "))
+          (neoment-room--load-and-find (current-buffer) (neoment-message-id replied))))))))
+
+;;;; Membership
+
+(defun neoment-room-leave ()
+  "Leave the current room."
+  (interactive)
+  (let* ((room-id neoment--room-id)
+         (buffer (current-buffer))
+         (name (neoment-room-display-name room-id)))
+    (when (y-or-n-p (format "Are you sure you want to leave the room %s? " name))
+      (neoment-api-leave
+       room-id
+       (lambda (result)
+         (let ((err (plist-get result :error)))
+           (cond
+            ((null err)
+             (neoment-notify--message (concat "Left room " name))
+             (when (buffer-live-p buffer) (kill-buffer buffer))
+             (neoment-rooms-refresh))
+            ((string-search "Not a known room" (neoment-http-error-message err))
+             (neoment-remove-room room-id)
+             (neoment-notify--message (format "Removed room %s from list" name))
+             (when (buffer-live-p buffer) (kill-buffer buffer))
+             (neoment-rooms-refresh))
+            (t (neoment-notify--error
+                (concat "Error leaving room: " (neoment-http-error-message err)))))))))))
+
+(defun neoment--existing-dm (user-id)
+  "Return the id of a room with exactly the user and USER-ID, or nil."
+  (let ((me (neoment-user-id)))
+    (seq-some (lambda (room)
+                (let ((members (neoment-room-members-list room)))
+                  (and (= (length members) 2)
+                       (member me members) (member user-id members)
+                       (neoment-room-id room))))
+              (neoment-rooms))))
+
+;;;###autoload
+(defun neoment-join (target)
+  "Join TARGET: a room id, an alias, or a user id (direct message)."
+  (interactive (list (read-string "Room id, alias or user: ")))
+  (cond
+   ((not (neoment-logged-in-p))
+    (neoment-notify--error "Not logged in"))
+   ((string-prefix-p "@" target)
+    (let ((existing (neoment--existing-dm target)))
+      (if existing
+          (progn (neoment-notify--message (concat "Opening existing DM with " target))
+                 (neoment-rooms-open-room existing))
+        (neoment-notify--message (format "Creating DM with %s..." target))
+        (neoment-api-create-dm
+         target
+         (lambda (result)
+           (if (plist-get result :error)
+               (neoment-notify--error
+                (concat "Failed to create DM: "
+                        (neoment-http-error-message (plist-get result :error))))
+             (neoment-notify--message (concat "Created DM with " target))
+             (neoment-rooms-open-room (plist-get result :ok))))))))
+   (t
+    (let ((existing (if (string-prefix-p "!" target)
+                        (and (neoment-room-is-member-p target) target)
+                      (seq-some (lambda (room)
+                                  (and (member target (neoment-room-aliases room))
+                                       (neoment-room-is-member-p (neoment-room-id room))
+                                       (neoment-room-id room)))
+                                (neoment-rooms)))))
+      (if existing
+          (progn (neoment-notify--message (format "Room %s already joined. Opening..." target))
+                 (neoment-rooms-open-room existing))
+        (neoment-api-join
+         target nil
+         (lambda (result)
+           (if (plist-get result :error)
+               (neoment-notify--error
+                (format "Failed to join room %s: %s" target
+                        (neoment-http-error-message (plist-get result :error))))
+             (neoment-notify--message (concat "Successfully joined room " target))
+             (neoment-rooms-open-room (plist-get result :ok))))))))))
+
+;;;; Other windows
+
+(declare-function neoment-room-info-open "neoment-room-info")
+(declare-function neoment-notification-settings-room "neoment-notification-settings")
+
+(defun neoment-room-show-info ()
+  "Show information about the current room in a window to the right."
+  (interactive)
+  (let ((room-id neoment--room-id))
+    (require 'neoment-room-info)
+    (neoment-room-info-open room-id t)))
+
+(defun neoment-room-notification-settings ()
+  "Open the notification settings of the current room."
+  (interactive)
+  (require 'neoment-notification-settings)
+  (neoment-notification-settings-room neoment--room-id))
 
 (provide 'neoment-room)
 ;;; neoment-room.el ends here

@@ -99,6 +99,8 @@ REPLACE the event id being edited and ATTACHMENT a plist."
                       (m.new_content . ,content)
                       (m.relates_to . ((rel_type . "m.replace") (event_id . ,replace))))))
     (when attachment
+      ;; Copy first: the pairs above may be shared backquote constants.
+      (setq content (copy-alist content))
       (setf (alist-get 'msgtype content)
             (neoment-compose-msgtype (plist-get attachment :mimetype)))
       (setq content (append content

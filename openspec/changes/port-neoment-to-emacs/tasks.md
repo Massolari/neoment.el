@@ -66,13 +66,13 @@ Phases follow emacs-port.md §20. Each group ships its own ERT tests. `make test
 
 ## 7. Message actions
 
-- [ ] 7.1 Implement message-at-point lookup and `n`/`p` navigation; verify with ERT tests on a rendered buffer, including skipping state lines and the end message.
-- [ ] 7.2 Implement `RET`/`r`/`e`/`t` entry points (own-message check, thread buffer `neoment://thread/…` with `Loading thread...`, start-thread compose); verify with ERT tests for the messages and buffer names.
-- [ ] 7.3 Implement reactions `a`/`A` with toggle-to-redact, plus `neoment-emoji.el` (design D14); verify with mocked ERT tests that a new reaction sends `m.reaction` and an existing one redacts.
-- [ ] 7.4 Implement `d` redact, `m` set read marker, `w` forward (content plus reused mxc, then open the target), and `V` show event; verify with mocked ERT payload and message tests.
-- [ ] 7.5 Implement `R` go-to-replied with mark push and the load-more prompts loop; verify with mocked ERT tests for found, found after one page, and history exhausted.
-- [ ] 7.6 Implement `L` leave (confirm, success, "Not a known room" local removal, `M_FORBIDDEN` success) and `neoment-join` (DM reuse/create, already joined, join with `via`); verify with mocked ERT tests covering every room-membership scenario.
-- [ ] 7.7 Bind the full `neoment-room-mode-map` per message-actions "Room mode key bindings"; verify with an ERT test that each key resolves to the named command.
+- [x] 7.1 Implement message-at-point lookup and `n`/`p` navigation; verify with ERT tests on a rendered buffer, including skipping state lines and the end message.
+- [x] 7.2 Implement `RET`/`r`/`e`/`t` entry points (own-message check, thread buffer `neoment://thread/…` with `Loading thread...`, start-thread compose); verify with ERT tests for the messages and buffer names.
+- [x] 7.3 Implement reactions `a`/`A` with toggle-to-redact, plus `neoment-emoji.el` (design D14); verify with mocked ERT tests that a new reaction sends `m.reaction` and an existing one redacts.
+- [x] 7.4 Implement `d` redact, `m` set read marker, `w` forward (content plus reused mxc, then open the target), and `V` show event; verify with mocked ERT payload and message tests.
+- [x] 7.5 Implement `R` go-to-replied with mark push and the load-more prompts loop; verify with mocked ERT tests for found, found after one page, and history exhausted.
+- [x] 7.6 Implement `L` leave (confirm, success, "Not a known room" local removal, `M_FORBIDDEN` success) and `neoment-join` (DM reuse/create, already joined, join with `via`); verify with mocked ERT tests covering every room-membership scenario.
+- [x] 7.7 Bind the full `neoment-room-mode-map` per message-actions "Room mode key bindings"; verify with an ERT test that each key resolves to the named command.
 
 ## 8. Media
 

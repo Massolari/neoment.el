@@ -85,9 +85,9 @@ Phases follow emacs-port.md §20. Each group ships its own ERT tests. `make test
 
 ## 9. Spaces and room info
 
-- [ ] 9.1 Implement `neoment-space.el` (buffer, hierarchy fetch and error, layout, `children_state` order without duplicates, `Joined` bubble, `(No Name)`, empty message); verify with ERT render tests from a fixture hierarchy.
-- [ ] 9.2 Implement the space actions (join prompt with `via`, open space/room, `q`/`g`/`f`/`F`/`l`); verify with mocked ERT tests.
-- [ ] 9.3 Implement `neoment-room-info.el` (layout, status toggles with key hints, links, collapsible sorted members, avatar 16×8 with zoom/open, invite restrictions); verify with ERT render tests and with mocked tag-toggle tests.
+- [x] 9.1 Implement `neoment-space.el` (buffer, hierarchy fetch and error, layout, `children_state` order without duplicates, `Joined` bubble, `(No Name)`, empty message); verify with ERT render tests from a fixture hierarchy.
+- [x] 9.2 Implement the space actions (join prompt with `via`, open space/room, `q`/`g`/`f`/`F`/`l`); verify with mocked ERT tests.
+- [x] 9.3 Implement `neoment-room-info.el` (layout, status toggles with key hints, links, collapsible sorted members, avatar 16×8 with zoom/open, invite restrictions); verify with ERT render tests and with mocked tag-toggle tests.
 
 ## 10. Push rules and desktop notifications
 

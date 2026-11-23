@@ -45,6 +45,8 @@
 (require 'neoment-compose)
 (require 'neoment-emoji)
 (require 'neoment-media)
+(require 'neoment-space)
+(require 'neoment-room-info)
 
 ;;;; Wiring
 

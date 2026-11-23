@@ -819,6 +819,59 @@ Show a message and return nil when there is none, unless SILENT."
   (interactive)
   (neoment-rooms--move -1))
 
+;;;; Coalesced rendering
+
+(defvar neoment-ui-render-delay 0.1
+  "Idle seconds before dirty buffers are rendered.")
+
+(defvar neoment-ui--dirty (make-hash-table :test 'eq)
+  "Buffers waiting for a render, mapped to their render function.")
+
+(defvar neoment-ui--timer nil
+  "Idle timer that renders the dirty buffers.")
+
+(defun neoment-ui--visible-p (buffer)
+  "Return non-nil when BUFFER is shown in a window."
+  (and (get-buffer-window buffer t) t))
+
+(defun neoment-ui-flush ()
+  "Render the dirty buffers that are shown in a window."
+  (setq neoment-ui--timer nil)
+  (let (todo)
+    (maphash (lambda (buffer function)
+               (cond
+                ((not (buffer-live-p buffer)) (push (cons buffer nil) todo))
+                ((neoment-ui--visible-p buffer) (push (cons buffer function) todo))))
+             neoment-ui--dirty)
+    (pcase-dolist (`(,buffer . ,function) todo)
+      (remhash buffer neoment-ui--dirty)
+      (when function
+        (with-current-buffer buffer
+          (funcall function))))))
+
+(defun neoment-ui-schedule (buffer function)
+  "Render BUFFER with FUNCTION once Emacs is idle.
+Several requests before the render cause a single render.  A buffer
+that is not shown waits until it is displayed."
+  (when (buffer-live-p buffer)
+    (puthash buffer function neoment-ui--dirty)
+    (unless neoment-ui--timer
+      (setq neoment-ui--timer
+            (run-with-idle-timer neoment-ui-render-delay nil #'neoment-ui-flush)))))
+
+(defun neoment-ui--on-window-buffer-change (&optional _frame)
+  "Render dirty buffers that just became visible."
+  (when (> (hash-table-count neoment-ui--dirty) 0)
+    (neoment-ui-flush)))
+
+(add-hook 'window-buffer-change-functions #'neoment-ui--on-window-buffer-change)
+
+(defun neoment-rooms-schedule-refresh ()
+  "Re-render the room list soon."
+  (let ((buffer (neoment-rooms--buffer)))
+    (when buffer
+      (neoment-ui-schedule buffer #'neoment-rooms-refresh))))
+
 ;;;; Pickers
 
 (defun neoment-completing-read-picker (items callback prompt)

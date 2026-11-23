@@ -34,8 +34,62 @@
 (require 'neoment-config)
 (require 'neoment-faces)
 (require 'neoment-notify)
+(require 'neoment-client)
 (require 'neoment-http)
 (require 'neoment-storage)
+(require 'neoment-events)
+(require 'neoment-sync)
+(require 'neoment-auth)
+(require 'neoment-rooms)
+(require 'neoment-room)
+
+;;;; Wiring
+
+(defun neoment--after-sync (room-ids)
+  "Re-render the room list and the open buffers of ROOM-IDS."
+  (neoment-rooms-schedule-refresh)
+  (dolist (room-id room-ids)
+    (neoment-room-refresh room-id)))
+
+(defun neoment--room-changed (room-id)
+  "Re-render the buffers of ROOM-ID, or of every room when nil."
+  (if room-id
+      (progn (neoment-room-refresh room-id)
+             (neoment-rooms-schedule-refresh))
+    (neoment-room-refresh-all)))
+
+(defun neoment--current-room ()
+  "Return the room id shown in the selected window, or nil."
+  (buffer-local-value 'neoment--room-id (window-buffer (selected-window))))
+
+(add-hook 'neoment-sync-after-functions #'neoment--after-sync)
+(add-hook 'neoment-client-room-changed-functions #'neoment--room-changed)
+(setq neoment-notify--current-room-function #'neoment--current-room)
+(setq neoment-http-unknown-token-function
+      (or neoment-http-unknown-token-function
+          (lambda (_client _err _token _retry give-up)
+            (neoment-auth-session-expired)
+            (funcall give-up))))
+
+(defvar neoment--initialized nil
+  "Non-nil once `neoment--init' ran.")
+
+(defun neoment--init ()
+  "Set up faces, validate options and track focus, once."
+  (unless neoment--initialized
+    (setq neoment--initialized t)
+    (neoment-faces-setup)
+    (neoment-config-validate)
+    (neoment-notify-start-focus-tracking)))
+
+;;;###autoload
+(defun neoment ()
+  "Log in to Matrix, or toggle the room list when logged in."
+  (interactive)
+  (neoment--init)
+  (if (neoment-logged-in-p)
+      (neoment-toggle-rooms-list)
+    (neoment-login)))
 
 (provide 'neoment)
 ;;; neoment.el ends here

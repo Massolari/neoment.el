@@ -26,6 +26,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'neoment-config)
 
 (defgroup neoment-faces nil
@@ -160,6 +161,7 @@ Its foreground is the background of `neoment-bubble-active-content'.")
 
 (defun neoment-faces--update (&rest _)
   "Recompute the bubble border faces from the current theme."
+  (neoment-icon--clear-cache)
   (let ((default-bg (neoment-faces--background 'default)))
     (pcase-dolist (`(,border . ,content)
                    '((neoment-bubble-border . neoment-bubble-content)
@@ -187,8 +189,37 @@ Its foreground is the background of `neoment-bubble-active-content'.")
 (defvar neoment--bubble-edges neoment-faces-bubble-edges-nerd
   "The (LEFT . RIGHT) bubble edges used by the renderers.")
 
+(defun neoment-faces--private-use-chars ()
+  "Return the private-use characters of the icons and bubble edges."
+  (let (chars)
+    (dolist (str (append (mapcar #'cdr neoment-icons)
+                         (mapcar #'cdr neoment-default-icons)
+                         (list (car neoment-faces-bubble-edges-nerd)
+                               (cdr neoment-faces-bubble-edges-nerd))))
+      (mapc (lambda (c)
+              (when (or (<= #xE000 c #xF8FF) (<= #xF0000 c #xFFFFD))
+                (cl-pushnew c chars)))
+            str))
+    (nreverse chars)))
+
+(defun neoment-faces-setup-icon-font ()
+  "Route Neoment's private-use icon characters to `neoment-icon-font-family'.
+The font is appended to the default fontset, so fonts you already set for
+those characters win.  It does nothing in terminal frames, when the option
+is nil, when the family is not installed, or when already applied."
+  (let ((family neoment-icon-font-family))
+    (when (and family
+               (display-graphic-p)
+               (not (equal family neoment-icon--font-applied))
+               (find-font (font-spec :family family)))
+      (dolist (char (neoment-faces--private-use-chars))
+        (set-fontset-font t char (font-spec :family family) nil 'append))
+      (setq neoment-icon--font-applied family)
+      (neoment-icon--clear-cache))))
+
 (defun neoment-faces-bubble-edges (&optional frame)
   "Return the (LEFT . RIGHT) bubble edges to use in FRAME."
+  (neoment-faces-setup-icon-font)
   (let ((frame (or frame (selected-frame))))
     (if (and (display-graphic-p frame)
              (not (char-displayable-p #xE0B6)))

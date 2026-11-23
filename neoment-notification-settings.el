@@ -31,8 +31,8 @@
 (require 'neoment-notify)
 
 (defconst neoment-notification-settings-level-labels
-  '((global . "Global settings") (all . "All messages")
-    (mentions . "Mentions and replies only") (none . "None"))
+  (list (cons 'global "Global settings") (cons 'all "All messages")
+        (cons 'mentions "Mentions and replies only") (cons 'none "None"))
   "Labels of the notification levels.")
 
 (defconst neoment-notification-settings-category-rules
@@ -234,7 +234,7 @@ The new rule is created before the old ones are deleted."
     (dolist (category '(one_to_one group))
       (when lines (push "" lines))
       (push (alist-get category neoment-notification-settings-category-headers) lines)
-      (dolist (level '(all mentions))
+      (dolist (level (list 'all 'mentions))
         (let ((category category) (level level))
           (push (concat "  " (neoment-notification-settings--option
                               (eq (alist-get category levels) level)

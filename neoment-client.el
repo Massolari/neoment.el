@@ -65,6 +65,7 @@
   joined-member-count unread
   read-receipt                          ; plist (:event-id :ts :is-local)
   avatar-url is-tracked
+  summary                               ; plist (:heroes :joined :invited)
   (sender-faces (make-hash-table :test 'equal)))
 
 (cl-defstruct (neoment-invited-room (:constructor neoment-invited-room--create)
@@ -310,6 +311,28 @@ An unknown name is fetched in the background."
       (setq name (format "%s and %d others" name (- n 2))))
     name))
 
+(defun neoment--name-from-heroes (summary)
+  "Return a room name built from the heroes SUMMARY, or nil."
+  (let* ((heroes (plist-get summary :heroes))
+         (joined (or (plist-get summary :joined) 0))
+         (invited (or (plist-get summary :invited) 0))
+         (total (+ joined invited))
+         (names (mapcar #'neoment-display-name heroes)))
+    ;; The empty room case is checked first: with one member or less,
+    ;; any number of heroes would otherwise satisfy the first rule.
+    (cond
+     ((<= total 1)
+      (pcase (length names)
+        (0 "Empty room")
+        (1 (format "Empty room (was %s)" (car names)))
+        (n (format "Empty room (was %s and %d others)" (car names) (1- n)))))
+     ((and names (>= (length names) (1- total)))
+      (string-join names ", "))
+     (names
+      (format "%s and %d others"
+              (string-join (seq-take names 2) ", ")
+              (- total (length (seq-take names 2))))))))
+
 (defun neoment-room-display-name (room-id)
   "Return the display name of the joined or invited room ROOM-ID."
   (let ((room (neoment--any-room room-id))
@@ -327,6 +350,8 @@ An unknown name is fetched in the background."
         (neoment-invited-room-name room)))
      ((not (equal (neoment-room-name room) room-id))
       (neoment-room-name room))
+     ((and (neoment-room-summary room)
+           (neoment--name-from-heroes (neoment-room-summary room))))
      (t
       (let ((names (mapcar #'neoment-display-name
                            (seq-remove (lambda (id) (equal id user))

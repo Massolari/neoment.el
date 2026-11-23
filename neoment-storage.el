@@ -278,7 +278,13 @@ Each alist maps a name (string) to non-nil when folded."
                                          (neoment-storage--bool
                                           (plist-get r :is-local)))))
                          :null))
-      (fully_read . ,(or (neoment-room-fully-read room) :null)))))
+      (fully_read . ,(or (neoment-room-fully-read room) :null))
+      (summary . ,(let ((summary (neoment-room-summary room)))
+                    (if summary
+                        `((heroes . ,(vconcat (plist-get summary :heroes)))
+                          (joined . ,(or (plist-get summary :joined) 0))
+                          (invited . ,(or (plist-get summary :invited) 0)))
+                      :null))))))
 
 (defun neoment-storage--room-from-json (data)
   "Return the room described by the parsed JSON DATA."
@@ -304,6 +310,11 @@ Each alist maps a name (string) to non-nil when folded."
                :joined-member-count (alist-get 'joined_member_count data)
                :unread (neoment-storage--parse-bool (alist-get 'unread data))
                :fully-read (alist-get 'fully_read data)
+               :summary (let ((summary (alist-get 'summary data)))
+                          (and summary
+                               (list :heroes (alist-get 'heroes summary)
+                                     :joined (alist-get 'joined summary)
+                                     :invited (alist-get 'invited summary))))
                :is-tracked nil)))
     (let ((receipt (alist-get 'read_receipt data)))
       (when receipt

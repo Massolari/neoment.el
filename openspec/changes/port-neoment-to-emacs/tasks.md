@@ -26,16 +26,16 @@ Phases follow emacs-port.md §20. Each group ships its own ERT tests. `make test
 
 ## 3. Sync, model and events
 
-- [ ] 3.1 Implement the structs and derived rules in `neoment-client.el` (display name, space name, is-space, room's space, membership, unread rule, message ordering, last activity, effective id); verify with ERT tests for each rule in matrix-events "Derived room rules", "Unread rule", and "Ordering and last activity".
-- [ ] 3.2 Implement event dispatch with dedup, batch ordering, and pending processing in `neoment-events.el`, covering room account data/state events and canonical alias state messages; verify with ERT tests for duplicates, a reaction before its target, a tombstone default, and alias removal text.
-- [ ] 3.3 Implement message parsing (body/formatted rules, `m.new_content`, redacted-by text, mentions, attachments with download URLs, location and thumbnails, threads and the root counter); verify with ERT fixture-event tests per attachment type and per thread case.
-- [ ] 3.4 Implement edits (newer-only, id swap, embedded `unsigned` edits) and redactions (pending, edit removal, `[Redacted: reason]`, reaction-key cleanup) and reactions; verify with the ERT scenarios from matrix-events "Edits", "Redactions", and "Reactions".
-- [ ] 3.5 Implement the membership text table from emacs-port.md §8.2 and member add/remove; verify with one ERT test per row of the table.
-- [ ] 3.6 Implement `m.receipt` handling (own user, main thread, highest ts, local replaced by server, ts-less move, fully_read fallback); verify with ERT receipt tests.
-- [ ] 3.7 Implement async reply and display-name resolution with caches and a dirty-room re-render hook (design D9); verify with a mocked ERT test showing the placeholder first and then the filled reply after the stubbed fetch returns.
-- [ ] 3.8 Implement room tracking (track/untrack, last-message-only retention); verify with ERT tests from matrix-events "Room tracking".
-- [ ] 3.9 Implement the sync loop in `neoment-sync.el` (request params, single in-flight request, status, the retry policy with 3 messages, start/stop commands, processing order, invite/join/leave/account data/presence, heroes naming, unread-count trigger, save every 10 syncs, 45 s client timeout, `condition-case` around processing, `:noquery` processes, raised `gc-cons-threshold` while processing); verify with mocked ERT tests for each matrix-sync scenario, including the leave-dialog conditions, a timed-out request that retries, and a processing error after which the next sync still starts.
-- [ ] 3.10 Implement compact `cache.json` save/load for rooms; verify with an ERT test that a room with 50 messages round-trips with one message and `is_tracked` false.
+- [x] 3.1 Implement the structs and derived rules in `neoment-client.el` (display name, space name, is-space, room's space, membership, unread rule, message ordering, last activity, effective id); verify with ERT tests for each rule in matrix-events "Derived room rules", "Unread rule", and "Ordering and last activity".
+- [x] 3.2 Implement event dispatch with dedup, batch ordering, and pending processing in `neoment-events.el`, covering room account data/state events and canonical alias state messages; verify with ERT tests for duplicates, a reaction before its target, a tombstone default, and alias removal text.
+- [x] 3.3 Implement message parsing (body/formatted rules, `m.new_content`, redacted-by text, mentions, attachments with download URLs, location and thumbnails, threads and the root counter); verify with ERT fixture-event tests per attachment type and per thread case.
+- [x] 3.4 Implement edits (newer-only, id swap, embedded `unsigned` edits) and redactions (pending, edit removal, `[Redacted: reason]`, reaction-key cleanup) and reactions; verify with the ERT scenarios from matrix-events "Edits", "Redactions", and "Reactions".
+- [x] 3.5 Implement the membership text table from emacs-port.md §8.2 and member add/remove; verify with one ERT test per row of the table.
+- [x] 3.6 Implement `m.receipt` handling (own user, main thread, highest ts, local replaced by server, ts-less move, fully_read fallback); verify with ERT receipt tests.
+- [x] 3.7 Implement async reply and display-name resolution with caches and a dirty-room re-render hook (design D9); verify with a mocked ERT test showing the placeholder first and then the filled reply after the stubbed fetch returns.
+- [x] 3.8 Implement room tracking (track/untrack, last-message-only retention); verify with ERT tests from matrix-events "Room tracking".
+- [x] 3.9 Implement the sync loop in `neoment-sync.el` (request params, single in-flight request, status, the retry policy with 3 messages, start/stop commands, processing order, invite/join/leave/account data/presence, heroes naming, unread-count trigger, save every 10 syncs, 45 s client timeout, `condition-case` around processing, `:noquery` processes, raised `gc-cons-threshold` while processing); verify with mocked ERT tests for each matrix-sync scenario, including the leave-dialog conditions, a timed-out request that retries, and a processing error after which the next sync still starts.
+- [x] 3.10 Implement compact `cache.json` save/load for rooms; verify with an ERT test that a room with 50 messages round-trips with one message and `is_tracked` false.
 
 ## 4. Rooms list
 

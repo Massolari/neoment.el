@@ -99,13 +99,13 @@ Phases follow emacs-port.md §20. Each group ships its own ERT tests. `make test
 
 ## 11. OAuth device code, SSO and token refresh
 
-- [ ] 11.1 Implement OAuth client registration with the `oauth_clients.json` cache and `invalid_client` eviction; verify with mocked ERT tests.
-- [ ] 11.2 Implement the device authorization request, validation, user instructions (both variants), and the SSH-aware `Verification page:` prompt issued after polling starts; verify with mocked ERT tests for both instruction texts and for the remote session.
-- [ ] 11.3 Implement token polling (pending, slow_down +5 s, transient retry, expired/denied messages, deadline) and completion (oauth `refresh` record, whoami, revoke on failure); verify with mocked ERT tests that drive a fake clock/timer stub.
-- [ ] 11.4 Implement the SSO local listener (random port and secret path, 8 KB cap, token/no-token HTML responses, 120 s timeout to manual) and manual mode (URL or raw token parsing); verify with ERT tests that connect to the real loopback listener from batch Emacs, and with parsing unit tests.
-- [ ] 11.5 Implement `neoment-token.el`: proactive refresh under 60 s, the single-flight waiter queue with 30 s timeout, legacy versus OAuth refresh, keeping the old refresh token, saving after refresh; verify with mocked ERT tests that 3 concurrent requests trigger exactly one refresh.
-- [ ] 11.6 Implement `M_UNKNOWN_TOKEN` handling (token-changed retry, soft-logout refresh+retry once), permanent-failure adoption from `data.json`, transient tolerance, and once-only session expiry; verify with mocked ERT tests for each session-management scenario.
-- [ ] 11.7 Implement OAuth logout via RFC 7009 revocation when a `revocation_endpoint` exists; verify with a mocked ERT test of the form body.
+- [x] 11.1 Implement OAuth client registration with the `oauth_clients.json` cache and `invalid_client` eviction; verify with mocked ERT tests.
+- [x] 11.2 Implement the device authorization request, validation, user instructions (both variants), and the SSH-aware `Verification page:` prompt issued after polling starts; verify with mocked ERT tests for both instruction texts and for the remote session.
+- [x] 11.3 Implement token polling (pending, slow_down +5 s, transient retry, expired/denied messages, deadline) and completion (oauth `refresh` record, whoami, revoke on failure); verify with mocked ERT tests that drive a fake clock/timer stub.
+- [x] 11.4 Implement the SSO local listener (random port and secret path, 8 KB cap, token/no-token HTML responses, 120 s timeout to manual) and manual mode (URL or raw token parsing); verify with ERT tests that connect to the real loopback listener from batch Emacs, and with parsing unit tests.
+- [x] 11.5 Implement `neoment-token.el`: proactive refresh under 60 s, the single-flight waiter queue with 30 s timeout, legacy versus OAuth refresh, keeping the old refresh token, saving after refresh; verify with mocked ERT tests that 3 concurrent requests trigger exactly one refresh.
+- [x] 11.6 Implement `M_UNKNOWN_TOKEN` handling (token-changed retry, soft-logout refresh+retry once), permanent-failure adoption from `data.json`, transient tolerance, and once-only session expiry; verify with mocked ERT tests for each session-management scenario.
+- [x] 11.7 Implement OAuth logout via RFC 7009 revocation when a `revocation_endpoint` exists; verify with a mocked ERT test of the form body.
 - [ ] 11.8 Verify manually: an OAuth device-code login against a homeserver with MAS (or matrix.org) and an SSO login against a Synapse with an SSO provider, both complete and survive an Emacs restart.
 
 ## 12. Finishing

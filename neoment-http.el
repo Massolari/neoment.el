@@ -208,8 +208,9 @@ CALLBACK receives (:ok DATA) or (:error ERR).  Return the process."
 
 (defvar neoment-http-ensure-token-function nil
   "Function called before an authenticated request.
-It is called with the client and a continuation; the continuation
-must be called with no argument once the token is fresh.")
+It is called with the client, a function to call with no argument
+once the token is fresh, and a function to call with an error plist
+when the request must fail instead.")
 
 (defvar neoment-http-unknown-token-function nil
   "Function called when a request fails with M_UNKNOWN_TOKEN.
@@ -279,7 +280,10 @@ current client in the meantime.  RETRIED is non-nil for a resend."
               (cl-loop for (k v) on http-args by #'cddr
                        unless (eq k :headers) append (list k v)))))))
       (if neoment-http-ensure-token-function
-          (funcall neoment-http-ensure-token-function client send)
+          (funcall neoment-http-ensure-token-function client send
+                   (lambda (err)
+                     (when (eq client neoment--client)
+                       (neoment-http--safe-call callback (list :error err)))))
         (funcall send)))))
 
 ;;;; Matrix endpoints

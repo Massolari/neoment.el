@@ -48,6 +48,9 @@
 (require 'neoment-space)
 (require 'neoment-room-info)
 (require 'neoment-notification-settings)
+(require 'neoment-token)
+(require 'neoment-oauth)
+(require 'neoment-sso)
 
 ;;;; Wiring
 
@@ -71,11 +74,6 @@
 (add-hook 'neoment-sync-after-functions #'neoment--after-sync)
 (add-hook 'neoment-client-room-changed-functions #'neoment--room-changed)
 (setq neoment-notify--current-room-function #'neoment--current-room)
-(setq neoment-http-unknown-token-function
-      (or neoment-http-unknown-token-function
-          (lambda (_client _err _token _retry give-up)
-            (neoment-auth-session-expired)
-            (funcall give-up))))
 
 (defvar neoment--initialized nil
   "Non-nil once `neoment--init' ran.")

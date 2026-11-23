@@ -248,6 +248,34 @@ Downloads write \"data\" to the requested output file."
               (should (get-text-property (line-beginning-position) 'neoment-header)))
           (kill-buffer buffer))))))
 
+(ert-deftest neoment-media-anchor-non-message-line ()
+  (neoment-media-test
+    (save-window-excursion
+      (puthash "$t" (neoment-message--create :id "$t" :sender "@a:s" :content "hello"
+                                             :timestamp (+ 1000 (* 2 86400000)))
+               (neoment-room-messages (neoment-get-room "!r:s")))
+      (let ((buffer (neoment-media-test-gui
+                      (neoment-media-test-buffer (neoment-media-test-image-message "$i")))))
+        (unwind-protect
+            (progn
+              (should (neoment-room--image-position "$i"))
+              ;; Point on the date separator of the later message, below the image.
+              (goto-char (neoment-room--image-position "$i"))
+              (while (or (get-text-property (point) 'neoment-message)
+                         (looking-at-p "^\\s-*$"))
+                (forward-line 1))
+              (let ((line (buffer-substring (line-beginning-position) (line-end-position))))
+                ;; The image disappears (terminal frame), then comes back.
+                (neoment-room-render-buffer)
+                (should-not (neoment-room--image-position "$i"))
+                (should (equal line (buffer-substring (line-beginning-position)
+                                                      (line-end-position))))
+                (neoment-media-test-gui (neoment-room-render-buffer))
+                (should (neoment-room--image-position "$i"))
+                (should (equal line (buffer-substring (line-beginning-position)
+                                                      (line-end-position))))))
+          (kill-buffer buffer))))))
+
 (ert-deftest neoment-media-anchor-image-line ()
   (neoment-media-test
     (save-window-excursion

@@ -186,7 +186,7 @@ TICK.  MARKER is released."
       (when (and (buffer-live-p buffer)
                  (= tick (buffer-local-value 'neoment-media--render-tick buffer)))
         (with-current-buffer buffer
-          (let ((image (neoment-media--create-image file key (get-buffer-window buffer))))
+          (let ((image (neoment-media--create-image file key (get-buffer-window buffer t))))
             (when (and image (marker-position marker)
                        (not (neoment-room--image-position key)))
               (let ((inhibit-read-only t))
@@ -208,7 +208,7 @@ TICK.  MARKER is released."
   "Add the inline images of the current room buffer (GUI frames only)."
   (cl-incf neoment-media--render-tick)
   (neoment-media--remove-images)
-  (let ((window (get-buffer-window (current-buffer))))
+  (let ((window (get-buffer-window (current-buffer) t)))
     (when (and window (display-graphic-p (window-frame window)) (display-images-p))
       (let ((buffer (current-buffer))
             (tick neoment-media--render-tick)
@@ -245,7 +245,7 @@ TICK.  MARKER is released."
     (when pos
       (let ((image (neoment-media--create-image
                     (get-text-property pos 'neoment-image-file) key
-                    (or (get-buffer-window (current-buffer)) (selected-window)))))
+                    (or (get-buffer-window (current-buffer) t) (selected-window)))))
         (when image
           (with-silent-modifications
             (put-text-property pos (1+ pos) 'display image)))))))

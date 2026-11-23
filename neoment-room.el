@@ -533,8 +533,31 @@ DELETE is passed on to `buffer-substring--filter'."
         (setq pos next)))
     count))
 
+(defun neoment-room--text-line-number (pos)
+  "Return the line number of POS, leaving out inline image lines."
+  (save-excursion
+    (goto-char pos)
+    (let ((target (line-beginning-position))
+          (line 1))
+      (goto-char (point-min))
+      (while (and (< (point) target) (zerop (forward-line 1)))
+        (unless (get-text-property (point) 'neoment-image)
+          (setq line (1+ line))))
+      line)))
+
+(defun neoment-room--text-line-position (line)
+  "Return the start of LINE, counted as `neoment-room--text-line-number' does."
+  (save-excursion
+    (goto-char (point-min))
+    (let ((remaining (1- line)))
+      (while (and (> remaining 0) (zerop (forward-line 1)))
+        (unless (get-text-property (point) 'neoment-image)
+          (setq remaining (1- remaining)))))
+    (point)))
+
 (defun neoment-room--position-anchor (pos)
   "Return (KEY OFFSET IMAGE-P) locating POS by its message, or (nil . LINE).
+LINE leaves out inline image lines, see `neoment-room--text-line-number'.
 OFFSET counts the characters of the message before POS, leaving out
 inline image text.  IMAGE-P is non-nil when POS is on an image line."
   (let ((key (get-text-property pos 'neoment-message)))
@@ -549,7 +572,7 @@ inline image text.  IMAGE-P is non-nil when POS is on an image line."
                 (save-excursion
                   (goto-char pos)
                   (and (get-text-property (line-beginning-position) 'neoment-image) t))))
-      (cons nil (save-excursion (goto-char pos) (line-number-at-pos))))))
+      (cons nil (neoment-room--text-line-number pos)))))
 
 (defun neoment-room--anchor-position (anchor)
   "Return the buffer position of ANCHOR, see `neoment-room--position-anchor'.
@@ -569,10 +592,7 @@ An anchor on an image line resolves to that image when it is shown."
                 (setq remaining (1- remaining)))
               (setq target (1+ target)))
             (min target (max pos (1- end)))))))
-    (save-excursion
-      (goto-char (point-min))
-      (forward-line (1- (cdr anchor)))
-      (point))))
+    (neoment-room--text-line-position (cdr anchor))))
 
 (defun neoment-room--start-position (anchor)
   "Return the window start position of ANCHOR.

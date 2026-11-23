@@ -48,7 +48,7 @@ Anchors also stop counting image text:
 - `neoment-room--position-anchor` returns `(KEY OFFSET IMAGE-P)`. OFFSET counts only characters of the message that do not carry `neoment-image`. IMAGE-P is non-nil when pos is on an image line.
 - `neoment-room--anchor-position` resolves IMAGE-P to the `IMG` character of KEY's image when there is one. Otherwise it walks OFFSET over non-image characters.
 
-This keeps anchors correct when an image is missing on one side of the render: hidden buffer, download still in flight, or a terminal frame. Before this change, a 33-character mismatch would have pushed point into the wrong body line. The `(nil . LINE)` fallback is unchanged.
+This keeps anchors correct when an image is missing on one side of the render: hidden buffer, download still in flight, or a terminal frame. Before this change, a 33-character mismatch would have pushed point into the wrong body line. The `(nil . LINE)` fallback, used for lines outside any message (date separators, the unread marker, the typing line), counts lines the same way: image lines are left out when building and resolving it, so a different number of images above such a line does not shift it.
 
 *Alternative: re-render then move point to the image once it arrives.* That needs pending-focus bookkeeping and makes the cursor jump visibly. It is rejected for the first-view case: if the image isn't cached yet, point lands on the header and stays there.
 

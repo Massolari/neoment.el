@@ -112,7 +112,8 @@
 RESPONDER gets the plz keyword arguments and returns (then VALUE) or
 \(else PLZ-ERROR)."
   (declare (indent 1))
-  `(let ((plz-calls nil))
+  `(let ((plz-calls nil)
+         (neoment-http-backend 'plz))
      (cl-letf (((symbol-function 'plz)
                 (lambda (method url &rest args)
                   (push (append (list :method method :url url) args) plz-calls)

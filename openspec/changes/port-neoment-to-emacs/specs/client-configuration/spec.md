@@ -24,6 +24,17 @@ The package SHALL define a `neoment` customisation group that holds every option
 - **WHEN** no options are customised
 - **THEN** sessions are saved, desktop notifications are enabled, and the room title format is `room_space`
 
+### Requirement: HTTP backend
+The package SHALL NOT require `plz`. The option `neoment-http-backend` SHALL choose how requests are sent: `auto` (the default) uses `plz` when it is installed and `url.el` otherwise, `plz` always uses `plz`, and `url` always uses `url.el`. Both backends SHALL give the same results and errors, honour the request's total timeout, and never make Emacs ask about their processes on exit.
+
+#### Scenario: plz not installed
+- **WHEN** `plz` is not installed and `neoment-http-backend` is `auto`
+- **THEN** requests are sent with `url-retrieve` and the client works
+
+#### Scenario: Timeout with url.el
+- **WHEN** a request sent with the `url` backend gets no answer within its total timeout
+- **THEN** it fails with an error without a status, which the sync loop treats as transient and retries
+
 ### Requirement: Option validation
 An invalid value of `neoment-login-method` SHALL produce a warning. `neoment-reload-config` SHALL run validation again and show `Configuration reloaded`.
 

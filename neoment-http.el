@@ -34,8 +34,21 @@
 (require 'json)
 (require 'url-util)
 (require 'url-parse)
-(require 'plz)
+(require 'url)
+(require 'url-http)
+(require 'plz nil t)
+(require 'neoment-config)
 (require 'neoment-client)
+
+(declare-function plz "plz")
+(declare-function plz-error-response "plz")
+(declare-function plz-error-curl-error "plz")
+(declare-function plz-error-message "plz")
+(declare-function plz-response-status "plz")
+(declare-function plz-response-body "plz")
+
+(defvar url-http-end-of-headers)
+(defvar url-http-response-status)
 
 ;;;; JSON
 
@@ -94,22 +107,26 @@ That is a failure without status (network), or a 408, 429 or 5xx."
    ((plist-get err :status) (format "HTTP %d" (plist-get err :status)))
    (t "Unknown error")))
 
+(defun neoment-http--response-error (status body)
+  "Return the error plist of an HTTP STATUS response with BODY."
+  (let* ((data (and (stringp body)
+                    (ignore-errors (neoment-json-decode body))))
+         (data (and (consp data) (consp (car data)) data)))
+    (list :status status
+          :errcode (alist-get 'errcode data)
+          :error (or (alist-get 'error data)
+                     (alist-get 'error_description data))
+          :soft-logout (eq (alist-get 'soft_logout data) t)
+          :data data)))
+
 (defun neoment-http--parse-error (plz-err)
   "Convert the `plz-error' PLZ-ERR into an error plist."
   (let ((response (plz-error-response plz-err))
         (curl (plz-error-curl-error plz-err)))
     (cond
      (response
-      (let* ((body (plz-response-body response))
-             (data (and (stringp body)
-                        (ignore-errors (neoment-json-decode body))))
-             (data (and (consp data) (consp (car data)) data)))
-        (list :status (plz-response-status response)
-              :errcode (alist-get 'errcode data)
-              :error (or (alist-get 'error data)
-                         (alist-get 'error_description data))
-              :soft-logout (eq (alist-get 'soft_logout data) t)
-              :data data)))
+      (neoment-http--response-error (plz-response-status response)
+                                    (plz-response-body response)))
      (curl
       (list :status nil :curl-code (car curl)
             :error (or (cdr curl) "Network error")))
@@ -161,10 +178,12 @@ BODY-FILE (a file sent as binary with CONTENT-TYPE).  AS is `json'
 \(parse the response), `string' or `file' (save it in OUTPUT-FILE).
 CONNECT-TIMEOUT and TIMEOUT are in seconds.
 
-CALLBACK receives (:ok DATA) or (:error ERR).  Return the process."
+CALLBACK receives (:ok DATA) or (:error ERR).  The request is sent
+with the backend chosen by `neoment-http-backend'.  Return the
+process, when there is one."
   (let* ((full-url (neoment-http-url url query))
          (headers (copy-sequence headers))
-         body body-type)
+         body)
     (cond
      (json
       (setq body (encode-coding-string (neoment-json-encode json) 'utf-8))
@@ -173,36 +192,171 @@ CALLBACK receives (:ok DATA) or (:error ERR).  Return the process."
       (setq body (neoment-http-query-string form))
       (push '("Content-Type" . "application/x-www-form-urlencoded") headers))
      (body-file
-      (setq body `(file ,body-file) body-type 'binary)
       (push (cons "Content-Type" (or content-type "application/octet-stream"))
             headers)))
-    (when (and (memq method '(post put)) (null body))
+    (when (and (memq method '(post put)) (null body) (null body-file))
       (setq body "{}")
       (push '("Content-Type" . "application/json") headers))
-    (apply #'plz method full-url
-           :headers headers
-           :as (pcase as
-                 ('file `(file ,output-file))
-                 (_ 'string))
-           :then (lambda (data)
-                   (neoment-http--safe-call
-                    callback
-                    (if (eq as 'json)
-                        (condition-case err
-                            (list :ok (neoment-json-decode data))
-                          (error (list :error
-                                       (list :status nil
-                                             :error (format "Invalid JSON: %s"
-                                                            (error-message-string err))))))
-                      (list :ok data))))
-           :else (lambda (plz-err)
-                   (neoment-http--safe-call
-                    callback (list :error (neoment-http--parse-error plz-err))))
-           :noquery t
-           (append (and body (list :body body))
-                   (and body-type (list :body-type body-type))
-                   (and connect-timeout (list :connect-timeout connect-timeout))
-                   (and timeout (list :timeout timeout))))))
+    (if (eq (neoment-http-backend) 'plz)
+        (if (fboundp 'plz)
+            (neoment-http--plz method full-url headers body body-file as output-file
+                               connect-timeout timeout callback)
+          (neoment-http--safe-call
+           callback (list :error (list :status nil
+                                       :error "The plz package is not installed"))))
+      (neoment-http--url method full-url headers body body-file as output-file
+                         (and (or connect-timeout timeout)
+                              (max (or connect-timeout 0) (or timeout 0)))
+                         callback))))
+
+(defun neoment-http-backend ()
+  "Return the backend to use for requests: `plz' or `url'."
+  (pcase neoment-http-backend
+    ('plz 'plz)
+    ('url 'url)
+    (_ (if (or (featurep 'plz) (require 'plz nil t)) 'plz 'url))))
+
+(defun neoment-http--success (as data)
+  "Return the result of a successful response DATA read AS."
+  (if (eq as 'json)
+      (condition-case err
+          (list :ok (neoment-json-decode data))
+        (error (list :error
+                     (list :status nil
+                           :error (format "Invalid JSON: %s"
+                                          (error-message-string err))))))
+    (list :ok data)))
+
+;;;;; plz backend
+
+(defun neoment-http--plz (method url headers body body-file as output-file
+                                 connect-timeout timeout callback)
+  "Send the request with `plz'.
+METHOD, URL, HEADERS, BODY, BODY-FILE, AS, OUTPUT-FILE,
+CONNECT-TIMEOUT, TIMEOUT and CALLBACK are as in `neoment-http-request'."
+  (apply #'plz method url
+         :headers headers
+         :as (pcase as
+               ('file `(file ,output-file))
+               (_ 'string))
+         :then (lambda (data)
+                 (neoment-http--safe-call callback (neoment-http--success as data)))
+         :else (lambda (plz-err)
+                 (neoment-http--safe-call
+                  callback (list :error (neoment-http--parse-error plz-err))))
+         :noquery t
+         (append (cond (body-file (list :body `(file ,body-file) :body-type 'binary))
+                       (body (list :body body)))
+                 (and connect-timeout (list :connect-timeout connect-timeout))
+                 (and timeout (list :timeout timeout)))))
+
+;;;;; url.el backend
+
+(defun neoment-http--file-bytes (file)
+  "Return the contents of FILE as a unibyte string."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert-file-contents-literally file)
+    (buffer-string)))
+
+(defun neoment-http--unibyte (string)
+  "Return STRING encoded as UTF-8 bytes in a unibyte string."
+  (if (multibyte-string-p string)
+      (encode-coding-string string 'utf-8)
+    string))
+
+(defun neoment-http--url-error-text (error-info)
+  "Return a readable text for the `url.el' ERROR-INFO."
+  (cond
+   ((null error-info) "Network error")
+   ((consp error-info)
+    (mapconcat (lambda (x) (format "%s" x)) (cdr error-info) " "))
+   (t (format "%s" error-info))))
+
+(defun neoment-http--url-result (status as output-file)
+  "Return the result of the `url.el' response in the current buffer.
+STATUS is the status plist `url-retrieve' passed to its callback.  AS
+and OUTPUT-FILE are as in `neoment-http-request'."
+  (let* ((code (and (boundp 'url-http-response-status) url-http-response-status))
+         (start (if (and (boundp 'url-http-end-of-headers)
+                         (markerp url-http-end-of-headers))
+                    (min (point-max) (1+ url-http-end-of-headers))
+                  (point-min)))
+         (raw (buffer-substring-no-properties start (point-max))))
+    (cond
+     ((and (numberp code) (>= code 200) (< code 300))
+      (if (eq as 'file)
+          (let ((coding-system-for-write 'binary))
+            (write-region raw nil output-file nil 'silent)
+            (list :ok output-file))
+        (neoment-http--success as (decode-coding-string raw 'utf-8))))
+     ((numberp code)
+      (list :error (neoment-http--response-error code (decode-coding-string raw 'utf-8))))
+     (t
+      (list :error (list :status nil
+                         :error (neoment-http--url-error-text
+                                 (plist-get status :error))))))))
+
+(defun neoment-http--kill-buffer (buffer)
+  "Kill BUFFER and its process without asking."
+  (when (buffer-live-p buffer)
+    (let ((process (get-buffer-process buffer)))
+      (when process (delete-process process)))
+    (let ((kill-buffer-query-functions nil))
+      (kill-buffer buffer))))
+
+(defun neoment-http--url (method url headers body body-file as output-file timeout callback)
+  "Send the request with the built-in `url.el'.
+METHOD, URL, HEADERS, BODY, BODY-FILE, AS, OUTPUT-FILE and CALLBACK are
+as in `neoment-http-request'.  TIMEOUT is the total timeout in seconds:
+when it passes, the request fails without a status."
+  ;; `url-http' refuses a request whose text is multibyte, which happens
+  ;; as soon as one header is multibyte and the body has non-ASCII
+  ;; bytes, so every part is made unibyte.
+  (let* ((url (neoment-http--unibyte url))
+         (url-request-method (neoment-http--unibyte (upcase (symbol-name method))))
+         (url-request-extra-headers
+          (mapcar (lambda (h) (cons (neoment-http--unibyte (car h))
+                                    (neoment-http--unibyte (cdr h))))
+                  headers))
+         (url-request-data (cond (body-file (neoment-http--file-bytes body-file))
+                                 ((and body (multibyte-string-p body))
+                                  (encode-coding-string body 'utf-8))
+                                 (t body)))
+         (done nil)
+         (timer nil)
+         (buffer nil))
+    (cl-flet ((finish (result)
+                (unless done
+                  (setq done t)
+                  (when (timerp timer) (cancel-timer timer))
+                  (neoment-http--safe-call callback result))))
+      (condition-case err
+          (setq buffer
+                (url-retrieve
+                 url
+                 (lambda (status)
+                   (let ((response (current-buffer)))
+                     (unwind-protect
+                         (finish (neoment-http--url-result status as output-file))
+                       (neoment-http--kill-buffer response))))
+                 nil t t))
+        (error (finish (list :error (list :status nil
+                                          :error (error-message-string err))))))
+      (let ((process (and (buffer-live-p buffer) (get-buffer-process buffer))))
+        (when process
+          (set-process-query-on-exit-flag process nil))
+        (when (and timeout (not done))
+          (setq timer (run-at-time timeout nil
+                                   (lambda ()
+                                     ;; Report first: killing the connection
+                                     ;; makes `url.el' call back too.
+                                     (unless done
+                                       (finish (list :error
+                                                     (list :status nil
+                                                           :error "Operation timed out")))
+                                       (neoment-http--kill-buffer buffer))))))
+        process))))
 
 ;;;; Authenticated requests
 

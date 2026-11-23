@@ -10,9 +10,12 @@ and graphical popups only appear in GUI frames).
 
 ## Installation
 
-Neoment depends on [`plz`](https://elpa.gnu.org/packages/plz.html) (GNU ELPA), which uses
-`curl`. [`posframe`](https://elpa.gnu.org/packages/posframe.html) is optional and used for
-hover popups.
+Neoment needs nothing beyond Emacs. Two packages are optional:
+
+- [`plz`](https://elpa.gnu.org/packages/plz.html) (GNU ELPA) sends requests with `curl`, which
+  handles the 30-second sync long-polls more reliably than the built-in `url.el`. When it is
+  installed, Neoment uses it automatically (see `neoment-http-backend`).
+- [`posframe`](https://elpa.gnu.org/packages/posframe.html) shows hover popups.
 
 ```elisp
 (use-package neoment
@@ -140,6 +143,7 @@ All options are in the `neoment` customization group (`M-x customize-group RET n
 | --- | --- | --- |
 | `neoment-save-session` | `t` | Save the session and the room cache to disk |
 | `neoment-login-method` | `nil` | `nil` (automatic), `oauth_device`, `password` or `sso` |
+| `neoment-http-backend` | `auto` | `auto` (`plz` when installed, else `url.el`), `plz` or `url` |
 | `neoment-notifier` | `neoment-notify-default-notifier` | Function `(msg level)` showing messages |
 | `neoment-desktop-notifications-enabled` | `t` | Send desktop notifications |
 | `neoment-desktop-notifications-handler` | `neoment-notify-default-desktop-handler` | Function `(title content)` |
@@ -179,6 +183,9 @@ Nerd Font, use plain icons:
 
 ## Troubleshooting
 
+- **Sync errors or stalls without `plz`**: install `plz`, or set `neoment-http-backend` to
+  `plz` once it is installed. The `url.el` backend aborts a request after its timeout and
+  retries, but curl is more robust on flaky networks.
 - **Login method not offered**: unset `neoment-login-method` to let Neoment choose.
 - **Session expired**: run `M-x neoment` again to log in.
 - **Squares instead of icons**: install a Nerd Font or use the plain icon preset above.
@@ -194,7 +201,7 @@ editing room settings.
 ## Development
 
 ```sh
-make deps     # install plz and package-lint into .deps/
+make deps     # install plz (for its backend tests) and package-lint into .deps/
 make test     # run the ERT suite
 make compile  # byte-compile with warnings as errors
 make lint     # checkdoc and package-lint

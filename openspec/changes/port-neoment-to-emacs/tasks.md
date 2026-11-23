@@ -116,6 +116,8 @@ Phases follow emacs-port.md §20. Each group ships its own ERT tests. `make test
 - [ ] 12.4 Run an end-to-end smoke test in GUI and `emacs -nw` against a local Synapse: log in, browse the list, open a room, send/edit/reply/react/redact, upload, open a space and room info, change notification settings, receive a desktop notification, log out.
 - [ ] 12.5 Check responsiveness: quit Emacs during a sync and confirm there is no process prompt, and profile the first sync on an account with many rooms (`profiler-start`); if typing freezes noticeably, add chunked processing (design Risks).
 
+- [x] 12.6 Make `plz` optional: drop it from `Package-Requires`, load it with `(require 'plz nil t)`, add the `url.el` backend to `neoment-http-request` (total-timeout timer, no exit query, file downloads, binary uploads, the same error plist) and the `neoment-http-backend` option (`auto`/`plz`/`url`, default `auto`), and document it in the README; verify with ERT tests that stub `url-retrieve` for success, Matrix error, network failure, timeout and backend selection, then check a sync loop with the `url` backend manually against a real server.
+
 ## Workflow follow-up
 
 - Archive the change with `openspec archive port-neoment-to-emacs` once all groups are complete and reviewed.

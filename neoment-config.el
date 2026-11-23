@@ -41,6 +41,14 @@ nil picks one automatically, preferring OAuth device code."
                  (const :tag "Password" password)
                  (const :tag "Single Sign-On (browser)" sso)))
 
+(defcustom neoment-http-backend 'auto
+  "How HTTP requests are sent.
+`auto' uses the `plz' package (curl) when it is installed and the
+built-in `url.el' otherwise.  `plz' and `url' force one of them."
+  :type '(choice (const :tag "plz when installed, else url.el" auto)
+                 (const :tag "plz (curl)" plz)
+                 (const :tag "url.el" url)))
+
 (defcustom neoment-notifier 'neoment-notify-default-notifier
   "Function that shows a message to the user.
 It is called with the message (already prefixed with \"[Neoment] \")
@@ -128,6 +136,7 @@ Keys missing from this alist use the value in `neoment-default-icons'."
 
 (defconst neoment-config--choices
   '((neoment-login-method nil oauth_device password sso)
+    (neoment-http-backend auto plz url)
     (neoment-rooms-display-last-message no message sender_message
                                         sender_message_inline)
     (neoment-rooms-room-title-format space_room room room_space))

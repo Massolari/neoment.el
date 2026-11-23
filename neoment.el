@@ -5,7 +5,7 @@
 ;; Author: Douglas M.
 ;; Maintainer: Douglas M.
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "29.1") (plz "0.9"))
+;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: comm
 ;; URL: https://github.com/Massolari/neoment.el
 

@@ -51,7 +51,7 @@ None. The project has no existing specs.
 ## Impact
 
 - New code: about 20 `neoment-*.el` files at the repository root (layout in design.md), ERT tests under `test/`, a package README, and a `Makefile`/Eldev-style test runner.
-- Dependencies: Emacs 29.1+. `plz` is recommended for async HTTP over curl, and `posframe` is optional for popups (with a fallback). `mpv`, `xclip`/`wl-paste`/`pngpaste`/`osascript` are optional external tools.
+- Dependencies: Emacs 29.1+ only. `plz` is optional and preferred for async HTTP over curl when installed (otherwise `url.el` is used), and `posframe` is optional for popups (with a fallback). `mpv`, `xclip`/`wl-paste`/`pngpaste`/`osascript` are optional external tools.
 - Disk: `<user-emacs-directory>/neoment/` (`data.json` mode 0600, `ui_state.json`, `oauth_clients.json`) and a cache directory (`cache.json`, `media/`).
 - Network: Matrix Client-Server API v3/v1 endpoints and OAuth 2.0 endpoints (registration, device authorization, token, revocation) on the user's homeserver/issuer.
 - Reference material: `emacs-port.md` is the detailed functional reference for every requirement here. It points to the original Lua source (`lua/neoment/**`), which is **not** in this repository; see design.md.

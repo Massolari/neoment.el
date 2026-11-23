@@ -2,7 +2,7 @@
 
 ## Why
 
-Neoment is a Matrix client for Neovim (Lua). This repository (`neoment.el`) is meant to give Emacs users the same client: same features, same UI, same on-screen text. It is empty right now apart from the functional spec in `emacs-port.md`. This change turns that document into a contract we can check against, and into a phased plan for building an idiomatic Emacs Lisp package.
+Neoment is a Matrix client for Neovim (Lua). This repository (`neoment.el`) is meant to give Emacs users the same client: same features, same UI, same on-screen text. It is empty right now apart from a functional description of the original. This change turns that description into a contract we can check against, and into a phased plan for building an idiomatic Emacs Lisp package.
 
 ## What Changes
 
@@ -54,4 +54,4 @@ None. The project has no existing specs.
 - Dependencies: Emacs 29.1+ only. `plz` is optional and preferred for async HTTP over curl when installed (otherwise `url.el` is used), and `posframe` is optional for popups (with a fallback). `mpv`, `xclip`/`wl-paste`/`pngpaste`/`osascript` are optional external tools.
 - Disk: `<user-emacs-directory>/neoment/` (`data.json` mode 0600, `ui_state.json`, `oauth_clients.json`) and a cache directory (`cache.json`, `media/`).
 - Network: Matrix Client-Server API v3/v1 endpoints and OAuth 2.0 endpoints (registration, device authorization, token, revocation) on the user's homeserver/issuer.
-- Reference material: `emacs-port.md` is the detailed functional reference for every requirement here. It points to the original Lua source (`lua/neoment/**`), which is **not** in this repository; see design.md.
+- Reference material: the upstream project (github.com/Massolari/neoment) is the functional reference for every requirement here. Its Lua source (`lua/neoment/**`) is **not** in this repository; see design.md.

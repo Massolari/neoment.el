@@ -1,10 +1,10 @@
-# Spec Delta
+# client-configuration Specification
 
 ## Purpose
 
 Defines how users configure and drive Neoment in Emacs: the user options and their validation, theme-aware faces and icons, the top-level commands, keymap conventions, user-facing message formatting, and optional transient integration.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Platform support
 The package SHALL require Emacs 29.1 or newer and SHALL work in both GUI frames and `emacs -nw`. Images and popups are limited to GUI frames. Quitting Emacs while requests are in flight SHALL NOT ask for confirmation.
@@ -18,7 +18,7 @@ The package SHALL require Emacs 29.1 or newer and SHALL work in both GUI frames 
 - **THEN** Emacs exits without asking about active processes
 
 ### Requirement: User options
-The package SHALL define a `neoment` customisation group that holds every option in emacs-port.md §4 (session saving, login method, notifier, desktop notifications, pickers, attachment handler, room-list display and icons), with the types and defaults listed there, except `neoment-desktop-notifications-source` and the custom level options (`neoment-desktop-notifications-buffer`, `-favorites`, `-people`, `-rooms`, `-per-room`), which are not ported.
+The package SHALL define a `neoment` customisation group that holds every option of the original (session saving, login method, notifier, desktop notifications, pickers, attachment handler, room-list display and icons), with the types and defaults defined in `neoment-config.el`, except `neoment-desktop-notifications-source` and the custom level options (`neoment-desktop-notifications-buffer`, `-favorites`, `-people`, `-rooms`, `-per-room`), which are not ported.
 
 #### Scenario: Defaults
 - **WHEN** no options are customised
@@ -50,14 +50,14 @@ Every user-facing message SHALL be prefixed with `[Neoment] ` and sent through `
 - **THEN** all Neoment messages go to that function with their level
 
 ### Requirement: Faces
-The package SHALL define the `neoment-*` faces listed in emacs-port.md §16, inheriting from standard faces so they follow the theme, plus 20 per-user sender faces. In bubble border faces, the foreground SHALL be the bubble content's background and the background SHALL be the default background. Border faces SHALL be recomputed when a theme is enabled.
+The package SHALL define the `neoment-*` faces defined in `neoment-faces.el`, inheriting from standard faces so they follow the theme, plus 20 per-user sender faces. In bubble border faces, the foreground SHALL be the bubble content's background and the background SHALL be the default background. Border faces SHALL be recomputed when a theme is enabled.
 
 #### Scenario: Theme switch
 - **WHEN** the user loads a different theme
 - **THEN** bubble border colours match the new bubble background
 
 ### Requirement: Icons
-`neoment-icons` SHALL default to the Nerd Font glyphs listed in emacs-port.md §4.1 and be customisable per key. The bubble edge glyphs (U+E0B6, U+E0B4) are fixed and not customisable. In a GUI frame where `char-displayable-p` reports that they cannot be displayed, the client SHALL use `▐` (U+2590) and `▌` (U+258C) with the same border faces. Both are one column wide, so layouts are unchanged.
+`neoment-icons` SHALL default to the Nerd Font glyphs in `neoment-default-icons` and be customisable per key. The bubble edge glyphs (U+E0B6, U+E0B4) are fixed and not customisable. In a GUI frame where `char-displayable-p` reports that they cannot be displayed, the client SHALL use `▐` (U+2590) and `▌` (U+258C) with the same border faces. Both are one column wide, so layouts are unchanged.
 
 #### Scenario: Override icon
 - **WHEN** the user sets the `room` icon to `#`

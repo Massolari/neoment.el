@@ -1,10 +1,10 @@
-# Spec Delta
+# matrix-events Specification
 
 ## Purpose
 
 Defines how incoming Matrix events become the room and message model: messages, edits, replies, threads, redactions, reactions, receipts, membership text and state. It also defines the derived rules the UI relies on.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Event deduplication and ordering
 Within a room, an event whose `event_id` was already seen SHALL be ignored. Each batch SHALL be sorted by `origin_server_ts` before processing. After each event is handled, any pending edits, redactions or reactions waiting for it SHALL be processed.
@@ -91,7 +91,7 @@ Messages with msgtype `m.image`, `m.file`, `m.audio`, `m.video` or `m.location`,
 - **THEN** the count becomes 3
 
 ### Requirement: Membership events and text
-`m.room.member` `join` SHALL add a member, and `leave`/`ban` SHALL remove one. The display name is updated when present. A state message `Membership: <target> <action>` SHALL be generated using the action table from emacs-port.md §8.2:
+`m.room.member` `join` SHALL add a member, and `leave`/`ban` SHALL remove one. The display name is updated when present. A state message `Membership: <target> <action>` SHALL be generated using these actions:
 - join, changed display name, changed avatar
 - left, invite revoked / rejected, removed by, unbanned by, knock denied / retracted
 - invited / re-invited / knock accepted

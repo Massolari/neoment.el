@@ -2,8 +2,8 @@
 
 ## Context
 
-- The repository has no code. The only input is `emacs-port.md`, a detailed functional description of the Neovim original (in Portuguese, with UI strings in English). The specs in this change are the contract. `emacs-port.md` is the detailed reference for exact strings, layouts and tables (membership actions, defcustom defaults, faces, icons).
-- `emacs-port.md` refers to the original Lua sources (`lua/neoment/**`, `tests/*_spec.lua`) as "in this repository", but they are **not** here. When a detail is missing from both the specs and `emacs-port.md`, the upstream project (github.com/Massolari/neoment) is the fallback reference.
+- The repository has no code. The only input is a functional description of the Neovim original. The specs in this change are the contract; exact strings, layouts and tables (membership actions, defcustom defaults, faces, icons) are taken from the original.
+- The original Lua sources (`lua/neoment/**`, `tests/*_spec.lua`) are **not** in this repository. When a detail is missing from the specs, the upstream project (github.com/Massolari/neoment) is the reference.
 - Target: Emacs 29.1+, GUI and TTY. The code must byte-compile without warnings and pass `checkdoc` and `package-lint`.
 - See proposal.md for motivation and scope.
 
@@ -22,7 +22,7 @@
 ## Decisions
 
 ### D1. Package layout: flat files at the repo root
-One file per responsibility, following emacs-port.md §3: `neoment.el` (entry, autoloads, `Package-Requires`), `neoment-config.el`, `neoment-faces.el`, `neoment-http.el`, `neoment-auth.el`, `neoment-oauth.el`, `neoment-sso.el`, `neoment-token.el`, `neoment-client.el`, `neoment-events.el`, `neoment-sync.el`, `neoment-storage.el`, `neoment-markdown.el`, `neoment-notify.el`, `neoment-notification-settings.el`, `neoment-rooms.el`, `neoment-room.el`, `neoment-compose.el`, `neoment-media.el`, `neoment-space.el`, `neoment-room-info.el`, `neoment-emoji.el`. Tests go in `test/neoment-*-test.el`.
+One file per responsibility, mirroring the module layout of the original: `neoment.el` (entry, autoloads, `Package-Requires`), `neoment-config.el`, `neoment-faces.el`, `neoment-http.el`, `neoment-auth.el`, `neoment-oauth.el`, `neoment-sso.el`, `neoment-token.el`, `neoment-client.el`, `neoment-events.el`, `neoment-sync.el`, `neoment-storage.el`, `neoment-markdown.el`, `neoment-notify.el`, `neoment-notification-settings.el`, `neoment-rooms.el`, `neoment-room.el`, `neoment-compose.el`, `neoment-media.el`, `neoment-space.el`, `neoment-room-info.el`, `neoment-emoji.el`. Tests go in `test/neoment-*-test.el`.
 *Alternative*: a single big file, which is harder to test and review. A `lisp/` subdirectory is unusual for ELPA/MELPA single-package repos.
 
 ### D2. HTTP: `plz` (optional) or `url.el` behind a thin `neoment-http` wrapper
@@ -37,7 +37,7 @@ Tests stub `neoment-http-request` with `cl-letf`.
 *Alternative*: requiring `plz`. It was the first choice, and was relaxed so that the package installs with no external dependency. The long-poll behaviour of the `url` backend must be checked against a real server.
 
 ### D3. Data model: `cl-defstruct` + hash tables
-Structs `neoment-client`, `neoment-room`, `neoment-invited-room`, `neoment-message` and `neoment-attachment` follow emacs-port.md §7. Collections keyed by id (`rooms`, `messages`, `events`, `display-names`, `presence`) are `equal` hash tables. JSON is parsed with `json-parse-buffer :object-type 'alist :array-type 'list :null-object nil :false-object :false`. Raw events are kept as parsed alists (for `V` and the redaction/edit lookup). Storage serialises the reduced room form explicitly instead of dumping structs, so the file format stays the documented JSON.
+Structs `neoment-client`, `neoment-room`, `neoment-invited-room`, `neoment-message` and `neoment-attachment` follow the data model of the original. Collections keyed by id (`rooms`, `messages`, `events`, `display-names`, `presence`) are `equal` hash tables. JSON is parsed with `json-parse-buffer :object-type 'alist :array-type 'list :null-object nil :false-object :false`. Raw events are kept as parsed alists (for `V` and the redaction/edit lookup). Storage serialises the reduced room form explicitly instead of dumping structs, so the file format stays the documented JSON.
 *Alternative*: plists everywhere, which give weaker field access and no type checks.
 
 ### D4. Client identity and the generation counter
@@ -51,7 +51,7 @@ Structs `neoment-client`, `neoment-room`, `neoment-invited-room`, `neoment-messa
 *Alternative*: timers polling a queue. That is more moving parts for no benefit.
 
 ### D7. Rendering: real text with properties, full re-render that keeps position
-Timeline and room-list buffers are produced by pure functions: model in, propertised string out. These are easy to test with ERT (the "rendering" tests in emacs-port.md §19). Every character carries `neoment-message` (message id) or `neoment-room`/`neoment-section`. Gutters, separators, icons and bubbles carry `neoment-decoration t`. A buffer-local `filter-buffer-substring-function` removes decoration when copying. Continuation lines use the `wrap-prefix` property. The bubble edge characters are chosen once per render from the frame showing the buffer (Nerd Font glyphs, or `▐`/`▌` when a GUI frame cannot display them) and passed to the pure renderer, so tests cover both variants.
+Timeline and room-list buffers are produced by pure functions: model in, propertised string out. These are easy to test with ERT (like the rendering tests of the original). Every character carries `neoment-message` (message id) or `neoment-room`/`neoment-section`. Gutters, separators, icons and bubbles carry `neoment-decoration t`. A buffer-local `filter-buffer-substring-function` removes decoration when copying. Continuation lines use the `wrap-prefix` property. The bubble edge characters are chosen once per render from the frame showing the buffer (Nerd Font glyphs, or `▐`/`▌` when a GUI frame cannot display them) and passed to the pure renderer, so tests cover both variants.
 On re-render, the client records `(message-id . offset-within-message)` for point and for `window-start` in each window showing the buffer, replaces the whole buffer text inside `inhibit-read-only`, then restores both positions. This is simpler than the original's prefix/suffix diff and still meets "cursor never jumps". A diff can be added later if flicker shows up. Renders are coalesced: a sync marks buffers dirty, and a short idle timer (about 0.1 s) renders each dirty buffer once. Buffers that are not shown in any window are skipped and rendered when they become visible.
 *Alternative*: overlays for virtual text. Rejected because they are heavy for long timelines and awkward to copy-filter.
 
@@ -99,7 +99,7 @@ Each implementation phase brings its own tests. The original Busted test **cases
 
 ## Risks / Trade-offs
 
-- [Original Lua source and tests are not in the repo] → Specs and `emacs-port.md` are authoritative. Consult upstream on GitHub only for edge cases neither covers, and record any new decision in the spec as part of that phase.
+- [Original Lua source and tests are not in the repo] → Specs are authoritative. Consult upstream on GitHub only for edge cases they do not cover, and record any new decision in the spec as part of that phase.
 - [Full re-render of large timelines may be slow] → History is paginated at 20 events, untracked rooms keep 1 message, and only dirty open rooms re-render. If profiling shows a problem, switch to the prefix/suffix diff from the original.
 - [Freeze while processing the first sync on accounts with many rooms] → The sync filter keeps the payload small and GC is deferred during processing. If profiling still shows a freeze, process rooms in chunks spread over `run-at-time 0` calls.
 - [Nerd Font glyphs are missing in many setups] → Bubble edges fall back automatically to `▐`/`▌` in GUI frames. Other icons are customisable (`neoment-icons`); document a non-Nerd-Font preset in the README.

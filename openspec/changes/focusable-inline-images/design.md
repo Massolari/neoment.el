@@ -69,8 +69,8 @@ The command stays `neoment-room-toggle-image-zoom`, still bound to `z` in `neome
 
 `neoment-room-image-open` applies only when the message's attachment type is `image`. Otherwise it delegates to `neoment-room-open-attachment`, which covers video and location thumbnails. It downloads the full attachment with `neoment-media-download` under the same name `o` already uses (`neoment-media--attachment-file-name`), so the cache is shared. Then it:
 
-- gets or creates `*neoment-image: <filename>*`;
-- if the buffer is new, inserts the file with `insert-file-contents-literally` into a unibyte buffer, sets `default-directory` to the media directory and turns on `image-mode`;
+- reuses the buffer whose buffer-local `neoment-media--image-buffer-path` is the downloaded path, or else creates a new buffer with `generate-new-buffer` named `*neoment-image: <filename>*`, so clients that send generic names such as `image.png` do not make two images share one buffer;
+- if the buffer is new, records the path and inserts the file with `insert-file-contents-literally` into a unibyte buffer, sets `default-directory` to the media directory and turns on `image-mode`;
 - `pop-to-buffer`s it.
 
 *Alternative: `find-file` the cached path.* The buffer would be named after the internal `<event_id><filename>`, and editing or killing it would touch the cache file. A non-file buffer still supports `image-mode`'s zoom/rotate and `image-save`.

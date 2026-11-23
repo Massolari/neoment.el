@@ -436,6 +436,129 @@ Downloads write \"data\" to the requested output file."
           (should-not (get-buffer "*neoment-image: cat.png*"))
           (kill-buffer buffer))))))
 
+(ert-deftest neoment-media-image-open-same-filename ()
+  (neoment-media-test
+    (save-window-excursion
+      (cl-letf (((symbol-function 'image-mode) (lambda () (setq major-mode 'image-mode))))
+        (setq neoment-media-test--http
+              (lambda (args)
+                (if (eq (plist-get args :as) 'file)
+                    (progn (with-temp-file (plist-get args :output-file)
+                             (insert (plist-get args :url)))
+                           (list :ok (plist-get args :output-file)))
+                  '(:ok nil))))
+        (puthash "$a" (neoment-media-test-image-message "$a")
+                 (neoment-room-messages (neoment-get-room "!r:s")))
+        (let ((buffer (neoment-media-test-gui
+                        (neoment-media-test-buffer
+                         (neoment-media-test-image-message "$b" :timestamp 2000))))
+              (opened nil))
+          (unwind-protect
+              (cl-flet ((open (key)
+                          (switch-to-buffer buffer)
+                          (goto-char (neoment-room--image-position key))
+                          (neoment-room-image-open)
+                          (push (current-buffer) opened)
+                          (current-buffer)))
+                (let ((a (open "$a"))
+                      (b (open "$b")))
+                  (should-not (eq a b))
+                  (should (string-match-p "/a\\'" (with-current-buffer a (buffer-string))))
+                  (should (string-match-p "/b\\'" (with-current-buffer b (buffer-string))))
+                  (should (string-prefix-p "*neoment-image: cat.png*" (buffer-name b)))
+                  (should (eq (open "$a") a))))
+            (mapc (lambda (b) (when (buffer-live-p b) (kill-buffer b))) opened)
+            (kill-buffer buffer)))))))
+
+(ert-deftest neoment-media-window-start-on-missing-image ()
+  (neoment-media-test
+    (save-window-excursion
+      (let ((buffer (neoment-media-test-gui
+                      (neoment-media-test-buffer (neoment-media-test-image-message "$i")))))
+        (unwind-protect
+            (progn
+              (forward-line 1)
+              (should (neoment-media-test-on-image-p "$i"))
+              (set-window-start (selected-window) (point) t)
+              ;; The image disappears (terminal frame).
+              (neoment-room-render-buffer)
+              (should-not (neoment-room--image-position "$i"))
+              (let ((start (window-start)))
+                (should (= start (save-excursion (goto-char start) (line-beginning-position))))
+                (should (get-text-property start 'neoment-header))))
+          (kill-buffer buffer))))))
+
+(ert-deftest neoment-media-image-stale-callbacks ()
+  (neoment-media-test
+    (save-window-excursion
+      (neoment-media-test-gui
+        (let ((requests nil)
+              (markers nil)
+              (orig (symbol-function 'neoment-media--place-image)))
+          (setq neoment-media-test--http
+                (lambda (args)
+                  (if (eq (plist-get args :as) 'file)
+                      (progn (push args requests) 'pending)
+                    '(:ok nil))))
+          (cl-letf (((symbol-function 'neoment-media--place-image)
+                     (lambda (buf tick marker file key)
+                       (push marker markers)
+                       (funcall orig buf tick marker file key))))
+            (let ((buffer (neoment-media-test-buffer (neoment-media-test-image-message "$i")))
+                  (deliver (lambda ()
+                             (let ((req (car requests)))
+                               (with-temp-file (plist-get req :output-file) (insert "data"))
+                               (funcall (plist-get req :callback)
+                                        (list :ok (plist-get req :output-file)))))))
+              (unwind-protect
+                  (progn
+                    ;; A re-render while the download is in flight.
+                    (should (= (length requests) 1))
+                    (neoment-room-render-buffer)
+                    (should (= (length requests) 1))
+                    (funcall deliver)
+                    (should (= (length markers) 2))
+                    (should-not (seq-some #'marker-buffer markers))
+                    ;; Only the current render placed an image, below its header.
+                    (goto-char (point-min))
+                    (let ((lines 0))
+                      (while (not (eobp))
+                        (when (get-text-property (line-beginning-position) 'neoment-image)
+                          (cl-incf lines))
+                        (forward-line 1))
+                      (should (= lines 1)))
+                    (goto-char (neoment-room--image-position "$i"))
+                    (forward-line -1)
+                    (should (get-text-property (point) 'neoment-header))
+                    ;; The buffer is killed before the download ends.
+                    (setq requests nil markers nil)
+                    (dolist (file (directory-files (neoment-storage-media-dir) t "\\`image-"))
+                      (delete-file file))
+                    (neoment-room-render-buffer)
+                    (should (= (length requests) 1))
+                    (kill-buffer buffer)
+                    (funcall deliver)
+                    (should (= (length markers) 1))
+                    (should-not (marker-buffer (car markers))))
+                (when (buffer-live-p buffer) (kill-buffer buffer))))))))))
+
+(ert-deftest neoment-media-image-error-keeps-view ()
+  (neoment-media-test
+    (save-window-excursion
+      (let ((buffer (neoment-media-test-gui
+                      (neoment-media-test-buffer
+                       (neoment-media-test-image-message "$i" :content "look at this")))))
+        (unwind-protect
+            (progn
+              (search-forward "look")
+              (neoment-media-test-gui
+                (cl-letf (((symbol-function 'neoment-media-image-file)
+                           (lambda (&rest _) (error "Disk full"))))
+                  (neoment-room-render-buffer)))
+              (should (looking-at " at this"))
+              (should-not (neoment-room--image-position "$i")))
+          (kill-buffer buffer))))))
+
 ;;;; 8.3 Open
 
 (ert-deftest neoment-media-open-attachment ()

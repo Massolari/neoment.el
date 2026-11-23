@@ -226,12 +226,16 @@ TICK.  MARKER is released."
             ;; Adjacent header lines share one property run: go line by line.
             (setq pos (save-excursion (goto-char pos) (forward-line 1) (point)))))
         (pcase-dolist (`(,marker ,key ,mxc) (nreverse pending))
-          (neoment-media-image-file
-           mxc (lambda (result)
-                 (if (plist-get result :ok)
-                     (neoment-media--place-image buffer tick marker
-                                                 (plist-get result :ok) key)
-                   (set-marker marker nil)))))))))
+          (condition-case err
+              (neoment-media-image-file
+               mxc (lambda (result)
+                     (if (plist-get result :ok)
+                         (neoment-media--place-image buffer tick marker
+                                                     (plist-get result :ok) key)
+                       (set-marker marker nil))))
+            (error
+             (set-marker marker nil)
+             (message "neoment: inline image failed: %s" (error-message-string err)))))))))
 
 (setq neoment-room-image-function #'neoment-media-add-images)
 
@@ -378,18 +382,25 @@ Show LIMIT-MESSAGE when the size cannot change."
                   (plist-get result :ok)
                   (append (list :origin 'message) attachment))))))))))))
 
+(defvar-local neoment-media--image-buffer-path nil
+  "File shown by a `neoment-media--show-image-buffer' buffer.")
+
 (defun neoment-media--show-image-buffer (path filename)
-  "Show the image file PATH in the `image-mode' buffer for FILENAME.
-An existing buffer is reused.  Return the buffer."
-  (let* ((name (format "*neoment-image: %s*" filename))
-         (buffer (get-buffer name)))
+  "Show the image file PATH in an `image-mode' buffer named after FILENAME.
+The buffer already showing PATH is reused; another image with the same
+FILENAME gets a buffer of its own.  Return the buffer."
+  (let ((buffer (seq-find (lambda (b)
+                            (equal (buffer-local-value 'neoment-media--image-buffer-path b)
+                                   path))
+                          (buffer-list))))
     (unless buffer
-      (setq buffer (get-buffer-create name))
+      (setq buffer (generate-new-buffer (format "*neoment-image: %s*" filename)))
       (with-current-buffer buffer
         (set-buffer-multibyte nil)
         (insert-file-contents-literally path)
         (setq default-directory (file-name-as-directory (neoment-storage-media-dir)))
-        (image-mode)))
+        (image-mode)
+        (setq neoment-media--image-buffer-path path)))
     (pop-to-buffer buffer)
     buffer))
 

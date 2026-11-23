@@ -575,9 +575,12 @@ An anchor on an image line resolves to that image when it is shown."
       (point))))
 
 (defun neoment-room--start-position (anchor)
-  "Return the window start position of ANCHOR, at the start of an image line."
+  "Return the window start position of ANCHOR.
+An anchor on an image line starts at a line start, whether the image is
+still shown or not."
   (let ((pos (neoment-room--anchor-position anchor)))
-    (if (get-text-property pos 'neoment-image)
+    (if (or (get-text-property pos 'neoment-image)
+            (and (car anchor) (nth 2 anchor)))
         (save-excursion (goto-char pos) (line-beginning-position))
       pos)))
 
@@ -602,7 +605,8 @@ An anchor on an image line resolves to that image when it is shown."
       (insert (neoment-room-render neoment--room-id neoment--thread-root-id))
       ;; Cached images are placed now, so anchors can land on them.
       (when neoment-room-image-function
-        (funcall neoment-room-image-function))
+        (with-demoted-errors "neoment: inline images failed: %S"
+          (funcall neoment-room-image-function)))
       (goto-char (neoment-room--anchor-position point-anchor))
       (pcase-dolist (`(,w ,pt ,start) window-anchors)
         (set-window-start w (neoment-room--start-position start) t)

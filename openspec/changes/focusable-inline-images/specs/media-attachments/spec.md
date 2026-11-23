@@ -58,11 +58,15 @@ With the cursor on an inline image, `+` SHALL multiply that image's maximum heig
 - **THEN** no image changes size
 
 ### Requirement: Open image in image-mode
-With the cursor on an inline image of an `image` attachment, `o` SHALL show the full-resolution attachment in its own buffer in `image-mode`, named `*neoment-image: <filename>*`, reusing that buffer when it already exists. For video or location thumbnails, `o` SHALL behave as on any other line of the message.
+With the cursor on an inline image of an `image` attachment, `o` SHALL show the full-resolution attachment in its own buffer in `image-mode`, named `*neoment-image: <filename>*`. The buffer already showing that attachment SHALL be reused; a different attachment with the same filename SHALL get a buffer of its own (with a uniquified name). For video or location thumbnails, `o` SHALL behave as on any other line of the message.
 
 #### Scenario: Open an image
 - **WHEN** the user presses `o` on an inline image of `cat.png`
 - **THEN** a buffer `*neoment-image: cat.png*` in `image-mode` shows the image
+
+#### Scenario: Two images with the same filename
+- **WHEN** the user presses `o` on an image `image.png`, then on another message's image also named `image.png`
+- **THEN** each image is shown in its own buffer, and pressing `o` again on the first one reuses its buffer
 
 #### Scenario: Open a video thumbnail
 - **WHEN** the user presses `o` on the thumbnail of a video message

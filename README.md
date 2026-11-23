@@ -98,11 +98,26 @@ rebind with `keymap-set`, and `?` shows the bindings of the mode.
 | `L` | `neoment-room-leave` |
 | `o` / `s` | `neoment-room-open-attachment` / `neoment-room-save-attachment` |
 | `u` / `U` | `neoment-room-upload` / `neoment-room-upload-clipboard-image` |
-| `z` | `neoment-room-toggle-image-zoom` |
+| `z` | `neoment-room-toggle-image-zoom` (on a message header line) |
 | `i` | `neoment-room-show-info` |
 | `N` | `neoment-room-notification-settings` |
 | `f` / `F` / `l` | room pickers and `neoment-toggle-rooms-list` |
 | `q` / `g` | `neoment-room-quit` / `revert-buffer` |
+
+### Inline images (`neoment-media-image-map`)
+
+In GUI frames, an image (or a video or location thumbnail) shows on its own line below the
+message header. The cursor can move onto that line with `C-n` / `C-p`. The line belongs to its
+message, so `r`, `e`, `a`, `s` and the other message keys work there, and it is left out of
+copied text. Re-renders keep the cursor on the image and keep each image's size while the
+buffer lives. With the cursor on the image line, these keys apply (every other key falls
+through to the room keys):
+
+| Key | Command |
+| --- | --- |
+| `z` | `neoment-room-toggle-image-zoom` (20% ↔ 100% of the window height; a resized image goes back to 20%) |
+| `+` / `-` | `neoment-room-image-enlarge` / `neoment-room-image-shrink` (×1.25 / ÷1.25, between 5% and 100% of the window height) |
+| `o` | `neoment-room-image-open` (full image in `*neoment-image: <file>*` in `image-mode`; video and location thumbnails open as attachments) |
 
 ### Compose buffer (`neoment-compose-mode-map`)
 

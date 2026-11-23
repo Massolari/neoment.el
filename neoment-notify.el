@@ -110,7 +110,9 @@ LEVEL is `info' (the default), `warn' or `error'."
 (defun neoment-notify-add-candidate (room message)
   "Remember MESSAGE as the newest incoming message of ROOM."
   (neoment-notify--ensure-client)
-  (unless (neoment-message-is-state message)
+  (unless (or (neoment-message-is-state message)
+              (equal (neoment-message-sender message)
+                     (neoment-client-user-id neoment--client)))
     (let ((old (gethash (neoment-room-id room) neoment-notify--candidates)))
       (when (or (null old)
                 (>= (or (neoment-message-timestamp message) 0)
@@ -129,11 +131,12 @@ It must be newer than the read receipt and the last notification."
   (let* ((receipt-ts (or (plist-get (neoment-room-read-receipt room) :ts) 0))
          (last (gethash (neoment-room-id room) neoment-notify--last-notified 0))
          (limit (max receipt-ts last))
-         (msg (neoment-room-last-message room)))
-    (when (and msg (> (or (neoment-message-timestamp msg) 0) limit)
-               (not (equal (neoment-message-sender msg)
-                           (neoment-client-user-id neoment--client))))
-      msg)))
+         (user (neoment-client-user-id neoment--client)))
+    (seq-find (lambda (msg)
+                (and (not (neoment-message-is-state msg))
+                     (not (equal (neoment-message-sender msg) user))
+                     (> (or (neoment-message-timestamp msg) 0) limit)))
+              (reverse (neoment-room-sorted-messages room)))))
 
 (defun neoment-notify--send (title content)
   "Send a desktop notification with TITLE and CONTENT."

@@ -91,11 +91,11 @@ Phases follow emacs-port.md §20. Each group ships its own ERT tests. `make test
 
 ## 10. Push rules and desktop notifications
 
-- [ ] 10.1 Implement push-rule level readers (global categories, per-room none/all/mentions/global, global label by member count or `is_direct`); verify with ERT tests ported from the push-rules cases.
-- [ ] 10.2 Implement the write sequences (global: per existing rule, actions then enabled, stop on first error; per-room: create first, enable, delete obsolete, percent-encoded ids) and the reload with its error messages; verify with mocked ERT tests that assert the exact request sequence.
-- [ ] 10.3 Implement the settings pop-up UI and the `neoment-notification-settings` command (titles, cursor on the current option, `RET`/`q`/`ESC`, `(Saving…)` guard); verify with an ERT render test and check manually.
-- [ ] 10.4 Implement notification decisions: suppression rules, focus tracking, title/body, server source (candidates, count increase, fallbacks, reset on client change); verify with ERT tests for each desktop-notifications scenario.
-- [ ] 10.5 Implement the default handlers (D-Bus with a one-time warning, `osascript` with argv, w32); verify with an ERT test that the macOS command line passes the texts as separate args, and trigger a real notification manually.
+- [x] 10.1 Implement push-rule level readers (global categories, per-room none/all/mentions/global, global label by member count or `is_direct`); verify with ERT tests ported from the push-rules cases.
+- [x] 10.2 Implement the write sequences (global: per existing rule, actions then enabled, stop on first error; per-room: create first, enable, delete obsolete, percent-encoded ids) and the reload with its error messages; verify with mocked ERT tests that assert the exact request sequence.
+- [x] 10.3 Implement the settings pop-up UI and the `neoment-notification-settings` command (titles, cursor on the current option, `RET`/`q`/`ESC`, `(Saving…)` guard); verify with an ERT render test and check manually.
+- [x] 10.4 Implement notification decisions: suppression rules, focus tracking, title/body, server source (candidates, count increase, fallbacks, reset on client change); verify with ERT tests for each desktop-notifications scenario.
+- [x] 10.5 Implement the default handlers (D-Bus with a one-time warning, `osascript` with argv, w32); verify with an ERT test that the macOS command line passes the texts as separate args, and trigger a real notification manually.
 
 ## 11. OAuth device code, SSO and token refresh
 

@@ -47,6 +47,7 @@
 (require 'neoment-media)
 (require 'neoment-space)
 (require 'neoment-room-info)
+(require 'neoment-notification-settings)
 
 ;;;; Wiring
 

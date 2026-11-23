@@ -153,6 +153,7 @@ All options are in the `neoment` customization group (`M-x customize-group RET n
 | `neoment-rooms-display-last-message` | `message` | `no`, `message`, `sender_message`, `sender_message_inline` |
 | `neoment-rooms-room-title-format` | `room_space` | `space_room`, `room` or `room_space` |
 | `neoment-icons` | Nerd Font glyphs | Alist of icons, see below |
+| `neoment-icon-font-family` | `"Symbols Nerd Font Mono"` | Font for icon glyphs in GUI frames, `nil` to disable |
 
 Desktop notifications follow your Matrix push rules (set them with
 `neoment-notification-settings`). They are never sent during the first sync, for your own
@@ -160,18 +161,18 @@ messages, or for the room you are looking at while Emacs has focus.
 
 ## Icons and fonts
 
-The default icons are [Nerd Font](https://www.nerdfonts.com/) glyphs. Bubble edges use
-U+E0B6/U+E0B4; in GUI frames where no font has them, Neoment uses `▐`/`▌` instead. Without a
-Nerd Font, use plain icons:
+The default icons are [Nerd Font](https://www.nerdfonts.com/) glyphs. In GUI frames Neoment
+routes them to the family in `neoment-icon-font-family` (default `Symbols Nerd Font Mono`),
+when it is installed, so they render even if your default font is not a Nerd Font. The font
+is appended to the default fontset, so fonts you set for those characters keep priority. Set
+the option to `nil` to disable this.
+
+Bubble edges use U+E0B6/U+E0B4; in GUI frames where no font has them, Neoment uses `▐`/`▌`
+instead. Default icons that still cannot be displayed fall back to their plain counterparts;
+icons you set yourself are never replaced. To use plain icons everywhere:
 
 ```elisp
-(setq neoment-icons
-      '((invite . "✉") (buffer . "▣") (favorite . "★") (people . "@")
-        (space . "◈") (room . "#") (low_priority . "↓") (reply . "↳")
-        (right_arrow . "▶") (down_arrow . "▼") (down_arrow_circle . "↓")
-        (bell . "!") (dot . "•") (dot_circle . "◉") (vertical_bar . "│")
-        (vertical_bar_thick . "┃") (tree_branch . "├") (image . "▧")
-        (file . "▤") (audio . "♪") (location . "⌖") (video . "▶")))
+(setq neoment-icons neoment-plain-icons)
 ```
 
 ## Files
@@ -188,7 +189,9 @@ Nerd Font, use plain icons:
   retries, but curl is more robust on flaky networks.
 - **Login method not offered**: unset `neoment-login-method` to let Neoment choose.
 - **Session expired**: run `M-x neoment` again to log in.
-- **Squares instead of icons**: install a Nerd Font or use the plain icon preset above.
+- **Squares instead of icons**: install `Symbols Nerd Font Mono` (or set
+  `neoment-icon-font-family` to an installed Nerd Font), or use
+  `(setq neoment-icons neoment-plain-icons)`.
 - **Stale room list**: `M-x neoment-clear-cache`, then restart the sync.
 - **No clipboard images on Linux**: install `xclip` (X11) or `wl-clipboard` (Wayland).
 

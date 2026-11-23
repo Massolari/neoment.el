@@ -24,6 +24,8 @@
 
 ;;; Code:
 
+(require 'seq)
+
 (defgroup neoment nil
   "A Matrix client."
   :group 'comm
@@ -126,11 +128,55 @@ ATTACHMENT plist, whose `:origin' says where it came from."
 Keys missing from this alist use the value in `neoment-default-icons'."
   :type '(alist :key-type symbol :value-type string))
 
+(defconst neoment-plain-icons
+  '((invite . "✉") (buffer . "▣") (favorite . "★") (people . "@")
+    (space . "◈") (room . "#") (low_priority . "↓") (reply . "↳")
+    (right_arrow . "▶") (down_arrow . "▼") (down_arrow_circle . "↓")
+    (bell . "!") (dot . "•") (dot_circle . "◉") (vertical_bar . "│")
+    (vertical_bar_thick . "┃") (tree_branch . "├") (image . "▧")
+    (file . "▤") (audio . "♪") (location . "⌖") (video . "▶"))
+  "Plain single-column Unicode icons, usable without a Nerd Font.
+Set `neoment-icons' to this to use them everywhere.")
+
+(defvar neoment-icon--font-applied nil
+  "The `neoment-icon-font-family' already routed in the default fontset.")
+
+(defcustom neoment-icon-font-family "Symbols Nerd Font Mono"
+  "Font family used for Neoment's private-use icon glyphs in GUI frames.
+Neoment appends it to the default fontset for its own icon characters,
+so fonts you set for them keep priority.  Nil disables this."
+  :type '(choice (const :tag "Disabled" nil) string)
+  :set (lambda (symbol value)
+         (set-default symbol value)
+         (setq neoment-icon--font-applied nil)))
+
+(defvar neoment-icon--displayable (make-hash-table :test 'eql)
+  "Cache of `char-displayable-p' results, keyed by character.")
+
+(defun neoment-icon--clear-cache ()
+  "Forget the cached icon displayability results."
+  (clrhash neoment-icon--displayable))
+
+(defun neoment-icon--char-displayable-p (char)
+  "Return non-nil when CHAR can be displayed, caching the answer."
+  (let ((hit (gethash char neoment-icon--displayable 'unknown)))
+    (if (eq hit 'unknown)
+        (puthash char (and (char-displayable-p char) t)
+                 neoment-icon--displayable)
+      hit)))
+
 (defun neoment-icon (key)
-  "Return the icon string for KEY."
-  (or (alist-get key neoment-icons)
-      (alist-get key neoment-default-icons)
-      ""))
+  "Return the icon string for KEY.
+In a graphical frame, a default icon that cannot be displayed is replaced
+by its plain counterpart; icons you customised are used unchanged."
+  (let* ((default (alist-get key neoment-default-icons))
+         (value (or (alist-get key neoment-icons) default "")))
+    (if (and default
+             (equal value default)
+             (display-graphic-p)
+             (not (seq-every-p #'neoment-icon--char-displayable-p value)))
+        (or (alist-get key neoment-plain-icons) value)
+      value)))
 
 (declare-function neoment-notify--message "neoment-notify")
 

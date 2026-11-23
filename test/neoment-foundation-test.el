@@ -95,6 +95,78 @@
             ((symbol-function 'char-displayable-p) (lambda (&rest _) nil)))
     (should (equal (neoment-faces-bubble-edges) '("" . "")))))
 
+;;;; Icons
+
+(defmacro neoment-test-with-icon-env (graphic displayable &rest body)
+  "Run BODY with GRAPHIC frame and DISPLAYABLE glyph stubs, fresh cache."
+  (declare (indent 2))
+  `(cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) ,graphic))
+             ((symbol-function 'char-displayable-p) (lambda (&rest _) ,displayable)))
+     (neoment-icon--clear-cache)
+     (unwind-protect (progn ,@body) (neoment-icon--clear-cache))))
+
+(ert-deftest neoment-plain-icons-cover-defaults ()
+  (should (equal (sort (mapcar #'car neoment-plain-icons) #'string<)
+                 (sort (mapcar #'car neoment-default-icons) #'string<)))
+  (dolist (cell neoment-plain-icons)
+    (should (= (string-width (cdr cell)) 1))))
+
+(ert-deftest neoment-icon-plain-fallback ()
+  (neoment-test-with-icon-env t nil
+    (should (equal (neoment-icon 'room) "#"))
+    (let ((neoment-icons '((room . "\U000F9999"))))
+      (should (equal (neoment-icon 'room) "\U000F9999")))
+    (let ((neoment-icons neoment-plain-icons))
+      (should (equal (neoment-icon 'room) "#"))))
+  (neoment-test-with-icon-env t t
+    (should (equal (neoment-icon 'room) "\U000F0BA7")))
+  (neoment-test-with-icon-env nil nil
+    (should (equal (neoment-icon 'room) "\U000F0BA7"))
+    (let ((neoment-icons neoment-plain-icons))
+      (should (equal (neoment-icon 'room) "#")))))
+
+(ert-deftest neoment-faces-update-clears-icon-cache ()
+  (puthash ?x t neoment-icon--displayable)
+  (neoment-faces--update)
+  (should (zerop (hash-table-count neoment-icon--displayable))))
+
+(ert-deftest neoment-faces-setup-icon-font-routes-pua ()
+  (let ((calls nil) (neoment-icon--font-applied nil)
+        (neoment-icon-font-family "Test Font"))
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
+              ((symbol-function 'find-font) (lambda (&rest _) t))
+              ((symbol-function 'set-fontset-font)
+               (lambda (&rest args) (push args calls))))
+      (neoment-faces-setup-icon-font)
+      (should (cl-find-if (lambda (c) (and (eq (nth 1 c) #xF0BA7)
+                                           (eq (nth 4 c) 'append)))
+                          calls))
+      (should (cl-find-if (lambda (c) (eq (nth 1 c) #xE0B6)) calls))
+      (should-not (cl-find-if (lambda (c) (eq (nth 1 c) ?▶)) calls))
+      (let ((n (length calls)))
+        (neoment-faces-setup-icon-font)
+        (should (= n (length calls)))))))
+
+(ert-deftest neoment-faces-setup-icon-font-skips ()
+  (dolist (case '((nil t t) ("Test Font" nil t) ("Test Font" t nil)))
+    (let ((calls nil) (neoment-icon--font-applied nil)
+          (neoment-icon-font-family (nth 0 case)))
+      (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) (nth 1 case)))
+                ((symbol-function 'find-font) (lambda (&rest _) (nth 2 case)))
+                ((symbol-function 'set-fontset-font)
+                 (lambda (&rest args) (push args calls))))
+        (neoment-faces-setup-icon-font)
+        (should-not calls)))))
+
+(ert-deftest neoment-faces-bubble-edges-sets-up-font ()
+  (let ((called nil))
+    (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
+              ((symbol-function 'char-displayable-p) (lambda (&rest _) t))
+              ((symbol-function 'neoment-faces-setup-icon-font)
+               (lambda () (setq called t))))
+      (neoment-faces-bubble-edges)
+      (should called))))
+
 ;;;; JSON
 
 (ert-deftest neoment-json-false-versus-empty-array ()

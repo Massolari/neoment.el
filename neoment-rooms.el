@@ -906,6 +906,7 @@ ITEMS is a list of (LINE . ROOM-ID).  PROMPT is the prompt."
 (defun neoment-rooms-pick (room-ids prompt callback &optional function)
   "Let the user pick one of ROOM-IDS with PROMPT, then call CALLBACK.
 FUNCTION is the picker (default `neoment-room-picker-function')."
+  (neoment-faces-setup-icon-font)
   (funcall (or function neoment-room-picker-function)
            (mapcar #'neoment-rooms-picker-item room-ids)
            callback prompt))

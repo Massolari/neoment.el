@@ -110,9 +110,9 @@ Phases follow emacs-port.md §20. Each group ships its own ERT tests. `make test
 
 ## 12. Finishing
 
-- [ ] 12.1 Add `neoment-command` (completing-read dispatcher) and an optional transient menu, and confirm `?` → `describe-mode` in every mode; verify with an ERT test that dispatching `logout` calls `neoment-logout`.
-- [ ] 12.2 Write `README.md` (install, quick start, commands, keymaps per mode, every option, the Nerd Font note and a non-Nerd-Font icon preset, troubleshooting, out-of-scope list); verify that every documented command and option exists via an ERT test that walks the documented symbol list.
-- [ ] 12.3 Run `make compile lint test` with zero warnings, zero checkdoc/package-lint errors and all tests passing.
+- [x] 12.1 Add `neoment-command` (completing-read dispatcher) and an optional transient menu, and confirm `?` → `describe-mode` in every mode; verify with an ERT test that dispatching `logout` calls `neoment-logout`.
+- [x] 12.2 Write `README.md` (install, quick start, commands, keymaps per mode, every option, the Nerd Font note and a non-Nerd-Font icon preset, troubleshooting, out-of-scope list); verify that every documented command and option exists via an ERT test that walks the documented symbol list.
+- [x] 12.3 Run `make compile lint test` with zero warnings, zero checkdoc/package-lint errors and all tests passing.
 - [ ] 12.4 Run an end-to-end smoke test in GUI and `emacs -nw` against a local Synapse: log in, browse the list, open a room, send/edit/reply/react/redact, upload, open a space and room info, change notification settings, receive a desktop notification, log out.
 - [ ] 12.5 Check responsiveness: quit Emacs during a sync and confirm there is no process prompt, and profile the first sync on an account with many rooms (`profiler-start`); if typing freezes noticeably, add chunked processing (design Risks).
 

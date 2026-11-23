@@ -31,6 +31,7 @@
 
 ;;; Code:
 
+(require 'transient)
 (require 'neoment-config)
 (require 'neoment-faces)
 (require 'neoment-notify)
@@ -85,6 +86,48 @@
     (neoment-faces-setup)
     (neoment-config-validate)
     (neoment-notify-start-focus-tracking)))
+
+;;;; Dispatcher and menu
+
+(defconst neoment-subcommands
+  '(("join" . neoment-join)
+    ("logout" . neoment-logout)
+    ("rooms" . neoment-pick-room)
+    ("open_rooms" . neoment-pick-open-room)
+    ("sync_start" . neoment-sync-start)
+    ("sync_stop" . neoment-sync-stop)
+    ("reload_config" . neoment-reload-config)
+    ("clear" . neoment-clear-cache)
+    ("toggle_rooms_list" . neoment-toggle-rooms-list)
+    ("notification_settings" . neoment-notification-settings))
+  "Subcommands offered by `neoment-command'.")
+
+;;;###autoload
+(defun neoment-command (subcommand)
+  "Run the Neoment SUBCOMMAND, chosen with completion."
+  (interactive (list (completing-read "Neoment: " neoment-subcommands nil t)))
+  (let ((command (cdr (assoc subcommand neoment-subcommands))))
+    (when command
+      (neoment--init)
+      (call-interactively command))))
+
+;;;###autoload (autoload 'neoment-menu "neoment" nil t)
+(transient-define-prefix neoment-menu ()
+  "Menu of the Neoment commands."
+  [["Session"
+    ("n" "Log in / toggle room list" neoment)
+    ("L" "Log out" neoment-logout)
+    ("s" "Start sync" neoment-sync-start)
+    ("S" "Stop sync" neoment-sync-stop)]
+   ["Rooms"
+    ("j" "Join room, alias or user" neoment-join)
+    ("f" "Pick a room" neoment-pick-room)
+    ("F" "Pick an open room" neoment-pick-open-room)
+    ("l" "Toggle room list" neoment-toggle-rooms-list)]
+   ["Settings"
+    ("N" "Notification settings" neoment-notification-settings)
+    ("r" "Reload configuration" neoment-reload-config)
+    ("c" "Clear cache" neoment-clear-cache)]])
 
 ;;;###autoload
 (defun neoment ()

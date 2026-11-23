@@ -60,9 +60,9 @@ Phases follow emacs-port.md §20. Each group ships its own ERT tests. `make test
 
 - [x] 6.1 Implement markdown→HTML (`neoment-markdown-to-html`) following the markdown-conversion spec; verify with an ERT suite covering code preservation, mentions, quotes, spoilers, links, emphasis, headings, lists and line breaks.
 - [x] 6.2 Implement HTML→markdown (`neoment-markdown-from-html`); verify with an ERT suite covering `mx-reply` removal, forwarded notice, spoilers, blockquotes, emoticons, `data-md`, code blocks with entities, and the final entity decoding.
-- [ ] 6.3 Implement `neoment-compose-mode` (window below at height 10, buffer names for every mode plus the attachment suffix, markdown font-lock, edit prefill, focus restore and height on close, `C-c C-c`/`C-c C-k`); verify with an ERT test for buffer naming and edit prefill, and check the window behaviour manually.
-- [ ] 6.4 Implement mention completion at point (members except self, case-insensitive id/name match, inserts the id with a name annotation); verify with an ERT test calling the capf function directly.
-- [ ] 6.5 Implement the send payload builder (text, mentions linking only known names, reply, thread with fallback, edit wrapper, attachment msgtype by mimetype, `neoment-el-<uuid>` txn) and fully_read-on-success; verify with ERT payload assertions for each message-compose scenario, then check manually that Element shows a sent reply, edit, thread message and mention correctly.
+- [x] 6.3 Implement `neoment-compose-mode` (window below at height 10, buffer names for every mode plus the attachment suffix, markdown font-lock, edit prefill, focus restore and height on close, `C-c C-c`/`C-c C-k`); verify with an ERT test for buffer naming and edit prefill, and check the window behaviour manually.
+- [x] 6.4 Implement mention completion at point (members except self, case-insensitive id/name match, inserts the id with a name annotation); verify with an ERT test calling the capf function directly.
+- [x] 6.5 Implement the send payload builder (text, mentions linking only known names, reply, thread with fallback, edit wrapper, attachment msgtype by mimetype, `neoment-el-<uuid>` txn) and fully_read-on-success; verify with ERT payload assertions for each message-compose scenario, then check manually that Element shows a sent reply, edit, thread message and mention correctly.
 
 ## 7. Message actions
 

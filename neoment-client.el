@@ -95,6 +95,10 @@
 (defvar neoment-client-fetch-display-name-function nil
   "Function called with a user id to fetch its display name.")
 
+(defun neoment--defer (function &rest args)
+  "Call FUNCTION with ARGS from the command loop, outside process callbacks."
+  (apply #'run-at-time 0 nil function args))
+
 (defun neoment--now-ms ()
   "Return the current time in milliseconds."
   (truncate (* 1000 (float-time))))

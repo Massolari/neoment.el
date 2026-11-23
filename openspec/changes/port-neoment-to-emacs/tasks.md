@@ -15,13 +15,13 @@ Phases follow emacs-port.md §20. Each group ships its own ERT tests. `make test
 
 ## 2. Password login and session
 
-- [ ] 2.1 Implement Matrix ID/server input parsing (`@user:server`, bare server, http(s) URL, empty, invalid) in `neoment-auth.el`; verify with the ERT cases from matrix-auth "Matrix ID or server input".
-- [ ] 2.2 Implement `.well-known` discovery with 5 s/10 s timeouts that never fail, plus the client reset that keeps `device_id`; verify with mocked-HTTP ERT tests for a valid base_url, a 404, and a non-http value.
-- [ ] 2.3 Implement parallel login-method detection and selection (configured method, oauth preferred silently, single method, `completing-read` with the three labels, every error message); verify with mocked ERT tests for each scenario in matrix-auth "Login method detection" and "Login method selection".
-- [ ] 2.4 Implement the login generation counter and cancellation hooks (SSO listener close / OAuth poll cancel stubs); verify with an ERT test that a callback from an older generation changes nothing.
-- [ ] 2.5 Implement password login (`Username: `/`Password: ` prompts, request body, token/expiry/user_id handling, `well_known` homeserver switch) and the login result messages; verify with a mocked ERT login flow that ends in `Login successful as …`.
-- [ ] 2.6 Implement session save (respecting `neoment-save-session`) and restore (7-day rule without a refresh token, `Matrix session restored for …`); verify with ERT tests for fresh, stale-without-refresh, and stale-with-refresh sessions.
-- [ ] 2.7 Implement `neoment-logout` (confirmation, `/logout`, file deletion that keeps `oauth_clients.json`, messages) and `neoment-clear-cache`; verify with mocked ERT tests for confirm, cancel, server error, and the cache present/absent messages.
+- [x] 2.1 Implement Matrix ID/server input parsing (`@user:server`, bare server, http(s) URL, empty, invalid) in `neoment-auth.el`; verify with the ERT cases from matrix-auth "Matrix ID or server input".
+- [x] 2.2 Implement `.well-known` discovery with 5 s/10 s timeouts that never fail, plus the client reset that keeps `device_id`; verify with mocked-HTTP ERT tests for a valid base_url, a 404, and a non-http value.
+- [x] 2.3 Implement parallel login-method detection and selection (configured method, oauth preferred silently, single method, `completing-read` with the three labels, every error message); verify with mocked ERT tests for each scenario in matrix-auth "Login method detection" and "Login method selection".
+- [x] 2.4 Implement the login generation counter and cancellation hooks (SSO listener close / OAuth poll cancel stubs); verify with an ERT test that a callback from an older generation changes nothing.
+- [x] 2.5 Implement password login (`Username: `/`Password: ` prompts, request body, token/expiry/user_id handling, `well_known` homeserver switch) and the login result messages; verify with a mocked ERT login flow that ends in `Login successful as …`.
+- [x] 2.6 Implement session save (respecting `neoment-save-session`) and restore (7-day rule without a refresh token, `Matrix session restored for …`); verify with ERT tests for fresh, stale-without-refresh, and stale-with-refresh sessions.
+- [x] 2.7 Implement `neoment-logout` (confirmation, `/logout`, file deletion that keeps `oauth_clients.json`, messages) and `neoment-clear-cache`; verify with mocked ERT tests for confirm, cancel, server error, and the cache present/absent messages.
 - [ ] 2.8 Wire the `M-x neoment` entry point (restore, else prompt; toggle the list when logged in) and verify manually against a local Synapse that login works and that restarting Emacs restores the session.
 
 ## 3. Sync, model and events

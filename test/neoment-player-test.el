@@ -141,7 +141,7 @@ With CREATE-SOCKET, create a plain file at the requested socket path."
 (ert-deftest neoment-player-socket-removed-on-failure ()
   "A socket file that cannot be connected to is deleted."
   (neoment-test-with-messages
-    (let (socket)
+    (let ((neoment-player--connect-tries 3) socket)
       (cl-letf (((symbol-function 'make-process)
                  (let ((stub (neoment-player-test--stub-make-process t)))
                    (lambda (&rest args)
@@ -156,6 +156,36 @@ With CREATE-SOCKET, create a plain file at the requested socket path."
         (should-not (file-exists-p socket))
         (should (cl-some (lambda (m) (string-prefix-p "[Neoment] Could not start mpv" m))
                          neoment-test--messages))))))
+
+(ert-deftest neoment-player-private-socket-directory-removed ()
+  "The private directory holding the socket is removed with the player."
+  (neoment-test-with-messages
+    (let (directory)
+      (cl-letf (((symbol-function 'make-process)
+                 (let ((stub (neoment-player-test--stub-make-process)))
+                   (lambda (&rest args)
+                     (setq directory
+                           (file-name-directory
+                            (substring
+                             (cl-find-if (lambda (a) (string-prefix-p "--input-ipc-server=" a))
+                                         (plist-get args :command))
+                             (length "--input-ipc-server="))))
+                     (apply stub args))))
+                ((symbol-function 'display-buffer) #'ignore))
+        (neoment-player-play "/tmp/a.ogg")
+        (should (file-directory-p directory))
+        (neoment-player--stop)
+        (should-not (file-exists-p directory))))))
+
+(ert-deftest neoment-player-killing-buffer-stops-player ()
+  (neoment-test-with-messages
+    (cl-letf (((symbol-function 'make-process)
+               (neoment-player-test--stub-make-process))
+              ((symbol-function 'display-buffer) #'ignore))
+      (neoment-player-play "/tmp/a.ogg")
+      (should neoment-player--state)
+      (kill-buffer neoment-player--buffer-name)
+      (should-not neoment-player--state))))
 
 (ert-deftest neoment-player-eof-shows-finished ()
   (neoment-test-with-messages
@@ -214,7 +244,11 @@ With CREATE-SOCKET, create a plain file at the requested socket path."
       (setq neoment-player-test--received nil)
       (neoment-player-speed-up)
       (should (equal (neoment-player-test--last)
-                     "{\"command\":[\"set_property\",\"speed\",1.25]}"))
+                     "{\"command\":[\"add\",\"speed\",0.25]}"))
+      (setq neoment-player-test--received nil)
+      (neoment-player-speed-down)
+      (should (equal (neoment-player-test--last)
+                     "{\"command\":[\"add\",\"speed\",-0.25]}"))
       (setq neoment-player-test--received nil)
       (neoment-player-speed-reset)
       (should (equal (neoment-player-test--last)
@@ -333,7 +367,7 @@ With CREATE-SOCKET, create a plain file at the requested socket path."
           (progn
             (neoment-player-play "/tmp/-a.ogg")
             (should (equal (car command) "mpv"))
-            (dolist (arg '("--no-terminal" "--no-video" "--keep-open=no"))
+            (dolist (arg '("--msg-level=all=error" "--no-video" "--keep-open=no"))
               (should (member arg command)))
             (should (cl-some (lambda (a) (string-prefix-p "--input-ipc-server=" a))
                              command))

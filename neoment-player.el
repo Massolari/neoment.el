@@ -37,12 +37,12 @@
 
 (cl-defstruct (neoment-player--state (:constructor neoment-player--state-create))
   "State of the running player."
-  process connection socket file timer output (partial "")
+  process connection socket directory file timer output (partial "")
   pause time duration speed volume mute
   eof stopped done rendered)
 
-(defvar neoment-player--connect-tries 40
-  "How many times to look for the mpv socket, 50 ms apart.")
+(defvar neoment-player--connect-tries 100
+  "How many times to connect to the mpv socket, 50 ms apart.")
 
 (defvar neoment-player--state nil
   "The current `neoment-player--state', or nil when nothing plays.")
@@ -122,6 +122,8 @@ Signal an error when the socket cannot be opened."
       (when (process-live-p process) (delete-process process)))
     (when-let* ((socket (neoment-player--state-socket state)))
       (ignore-errors (delete-file socket)))
+    (when-let* ((directory (neoment-player--state-directory state)))
+      (ignore-errors (delete-directory directory t)))
     (when-let* ((output (neoment-player--state-output state)))
       (when (buffer-live-p output) (kill-buffer output)))
     (when (eq neoment-player--state state)
@@ -140,6 +142,10 @@ Signal an error when the socket cannot be opened."
 (defun neoment-player--sentinel (state process _event)
   "Handle the exit of the mpv PROCESS of STATE."
   (unless (process-live-p process)
+    ;; The eof event may still be unread on the socket; read it first.
+    (when-let* ((connection (neoment-player--state-connection state)))
+      (when (process-live-p connection)
+        (accept-process-output connection 0.05)))
     (let ((finished (and (neoment-player--state-eof state)
                          (not (neoment-player--state-stopped state))
                          (not (neoment-player--state-done state)))))
@@ -162,17 +168,32 @@ Signal an error when the socket cannot be opened."
 
 (defun neoment-player--connect-loop (state tries)
   "Try to connect STATE to its socket; give up after TRIES attempts.
-The state keeps a timer that calls this again until it succeeds."
-  (cond
-   ((neoment-player--state-done state))
-   ((file-exists-p (neoment-player--state-socket state))
-    (cancel-timer (neoment-player--state-timer state))
-    (setf (neoment-player--state-timer state) nil)
-    (condition-case err
-        (neoment-player--attach state (neoment-player--state-socket state))
-      (error (neoment-player--fail state (error-message-string err)))))
-   ((<= tries 0)
-    (neoment-player--fail state "timed out waiting for the control socket"))))
+A failed attempt is retried, since mpv may create the socket file
+before it listens on it.  The state keeps a timer that calls this."
+  (unless (or (neoment-player--state-done state)
+              (neoment-player--state-connection state))
+    (let ((err (when (file-exists-p (neoment-player--state-socket state))
+                 (condition-case err
+                     (progn
+                       (neoment-player--attach state
+                                               (neoment-player--state-socket state))
+                       nil)
+                   (error
+                    (when-let* ((connection
+                                 (neoment-player--state-connection state)))
+                      (delete-process connection)
+                      (setf (neoment-player--state-connection state) nil))
+                    err)))))
+      (cond
+       ((neoment-player--state-connection state)
+        (cancel-timer (neoment-player--state-timer state))
+        (setf (neoment-player--state-timer state) nil))
+       ((<= tries 0)
+        (neoment-player--fail
+         state
+         (if err
+             (error-message-string err)
+           "timed out waiting for the control socket")))))))
 
 (defun neoment-player--start-connect (state)
   "Start the retry timer that connects STATE to the mpv socket."
@@ -189,18 +210,19 @@ The state keeps a timer that calls this again until it succeeds."
   "Play the audio FILE with mpv, replacing any current player."
   (interactive "fAudio file: ")
   (neoment-player--stop)
-  (let* ((socket (make-temp-name
-                  (expand-file-name "neoment-mpv-" temporary-file-directory)))
+  (let* ((directory (make-temp-file "neoment-mpv-" t))
+         (socket (expand-file-name "ipc" directory))
          (output (generate-new-buffer " *neoment-mpv-output*"))
          (state (neoment-player--state-create
-                 :socket socket :file file :output output
+                 :socket socket :directory directory :file file :output output
                  :speed 1.0 :pause nil)))
     (setq neoment-player--state state)
     (condition-case err
         (setf (neoment-player--state-process state)
               (make-process
                :name "neoment-mpv" :buffer output :noquery t
-               :command (append (list "mpv" "--no-terminal" "--no-video"
+               :command (append (list "mpv" "--no-input-terminal" "--no-video"
+                                      "--msg-level=all=error" "--no-msg-color"
                                       "--pause=no" "--keep-open=no"
                                       (concat "--input-ipc-server=" socket))
                                 neoment-player-mpv-arguments
@@ -251,6 +273,13 @@ The state keeps a timer that calls this again until it succeeds."
   (neoment-player--command
    "set_property" "speed" (/ (round (* 100 (max 0.25 speed))) 100.0)))
 
+(defun neoment-player--change-speed (delta)
+  "Change the speed by DELTA relative to mpv's own current value.
+This stays correct when several presses arrive before mpv reports back."
+  (if (and (< delta 0) (< (+ (neoment-player--speed) delta) 0.25))
+      (neoment-player--set-speed 0.25)
+    (neoment-player--command "add" "speed" delta)))
+
 (defun neoment-player--speed ()
   "Return the observed speed of the current player."
   (or (and neoment-player--state
@@ -260,12 +289,12 @@ The state keeps a timer that calls this again until it succeeds."
 (defun neoment-player-speed-up ()
   "Increase the speed by `neoment-player-speed-step'."
   (interactive)
-  (neoment-player--set-speed (+ (neoment-player--speed) neoment-player-speed-step)))
+  (neoment-player--change-speed neoment-player-speed-step))
 
 (defun neoment-player-speed-down ()
   "Decrease the speed by `neoment-player-speed-step'."
   (interactive)
-  (neoment-player--set-speed (- (neoment-player--speed) neoment-player-speed-step)))
+  (neoment-player--change-speed (- neoment-player-speed-step)))
 
 (defun neoment-player-speed-reset ()
   "Reset the speed to 1.0."
@@ -358,6 +387,7 @@ The state keeps a timer that calls this again until it succeeds."
   "Major mode of the audio player buffer.
 Keys are forwarded to mpv while `neoment-player-forward-keys' is non-nil."
   (use-local-map (neoment-player--make-map))
+  (add-hook 'kill-buffer-hook #'neoment-player--stop nil t)
   (setq-local buffer-read-only t
               truncate-lines t
               cursor-type nil

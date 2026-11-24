@@ -35,16 +35,6 @@
       (sleep-for 0.3)
       (should-not ran))))
 
-(ert-deftest neoment-rooms-refresh-skipped-while-quitting ()
-  (let ((neoment--quitting t)
-        (buffer (generate-new-buffer " *neoment-rooms-test*")))
-    (unwind-protect
-        (cl-letf (((symbol-function 'neoment-rooms--buffer) (lambda () buffer))
-                  ((symbol-function 'neoment-rooms-render)
-                   (lambda (&rest _) (error "rendered"))))
-          (neoment-rooms-refresh))
-      (kill-buffer buffer))))
-
 (ert-deftest neoment-media-shutdown-removes-mpv ()
   (let ((buffer (get-buffer-create "*neoment-mpv*"))
         (process (neoment-quit-test--sleep-process "neoment-mpv"))
@@ -86,7 +76,7 @@
 (ert-deftest neoment-quit-kills-everything-and-keeps-session ()
   (neoment-test-with-temp-dir
     (neoment-test-with-messages
-      (let ((neoment--client nil) (neoment--quitting nil)
+      (let ((neoment--client nil)
             (stopped nil) (buffers nil) (shown nil)
             (file (expand-file-name "data.json" user-emacs-directory)))
         (with-temp-file file (insert "{}"))
@@ -114,23 +104,13 @@
           (kill-buffer other))
         (should (file-exists-p file))
         (should (equal shown '("Neoment closed")))
-        (should neoment--quitting)
         (sleep-for 0.1)
-        (should-not neoment--quitting)))))
+        (should-not (get-buffer neoment-rooms-buffer-name))))))
 
 (ert-deftest neoment-quit-with-nothing-open ()
-  (let ((neoment--client nil) (neoment--quitting nil))
+  (let ((neoment--client nil))
     (should (equal (neoment-quit-test--capturing (neoment-quit))
                    '("Neoment closed")))))
-
-(ert-deftest neoment-quit-resets-flag-when-a-step-fails ()
-  (let ((neoment--client nil) (neoment--quitting nil))
-    (cl-letf (((symbol-function 'neoment-sync-stop)
-               (lambda (&optional _) (error "Boom"))))
-      (should-error (neoment-quit)))
-    (should neoment--quitting)
-    (sleep-for 0.1)
-    (should-not neoment--quitting)))
 
 (ert-deftest neoment-rooms-quit-confirmed ()
   (let ((ran nil))

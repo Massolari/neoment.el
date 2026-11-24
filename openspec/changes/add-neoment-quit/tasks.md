@@ -2,7 +2,7 @@
 
 ## 1. Teardown helpers
 
-- [x] 1.1 Add `neoment-ui-cancel-timer` in `neoment-rooms.el` and a `neoment--quitting` guard in `neoment-rooms-refresh`; add an ERT test that a scheduled render does not run after cancel (`make test` passes)
+- [x] 1.1 Add `neoment-ui-cancel-timer` in `neoment-rooms.el`; add an ERT test that a scheduled render does not run after cancel (`make test` passes)
 - [x] 1.2 Add `neoment-media-shutdown` in `neoment-media.el` (cancel popup timer, delete `neoment-mpv` process and buffer, kill popup buffer) with an ERT test using a fake process
 - [x] 1.3 Add a `neoment-notify` process teardown in `neoment-notify.el` with an ERT test
 - [x] 1.4 Mark event-JSON buffers opened from `neoment-room.el` with a buffer-local marker so they can be found; test that the marker is set

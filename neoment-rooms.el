@@ -427,13 +427,10 @@ time in seconds (default: the current time)."
           (setq pos (next-single-property-change pos prop))))
       (when found (goto-char found) t))))
 
-(defvar neoment--quitting nil
-  "Non-nil while `neoment-quit' runs; `neoment-rooms-refresh' does nothing.")
-
 (defun neoment-rooms-refresh ()
   "Re-render the room list buffer, keeping point on the same line."
   (let ((buffer (neoment-rooms--buffer)))
-    (when (and (buffer-live-p buffer) (not neoment--quitting))
+    (when (buffer-live-p buffer)
       (with-current-buffer buffer
         (let* ((window (get-buffer-window buffer))
                (key (neoment-rooms--line-key))

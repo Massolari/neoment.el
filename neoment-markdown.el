@@ -217,22 +217,75 @@ In TEMPLATE, %N stands for group N."
 
 ;;;; HTML -> markdown
 
-(defun neoment-markdown--spoiler (description content)
+(defun neoment-markdown--plain-code (code)
+  "Return the converted CODE, inline or fenced, without its markup."
+  (cond
+   ((string-match "\\`\n```[^\n]*\n\\(\\(?:.\\|\n\\)*?\\)\n```\n\\'" code)
+    (match-string 1 code))
+   ((string-match "\\``\\(\\(?:.\\|\n\\)*\\)`\\'" code) (match-string 1 code))
+   (t code)))
+
+(defun neoment-markdown--spoiler (description content &optional codes)
   "Return the markdown of a spoiler with DESCRIPTION and CONTENT.
-CONTENT is HTML: its tags are dropped and its entities decoded.  When
-it has spaces or link delimiters it goes within `<…>', with `\\', `<'
-and `>' escaped by a backslash and newlines written as `\\n'."
-  (let* ((text (neoment-markdown--decode-entities
-                (replace-regexp-in-string "<[^>]*>" "" content)))
+CONTENT is HTML: its tags are dropped, its entities decoded and its
+code placeholders, keys of the alist CODES, replaced by the plain code.
+When it has spaces or link delimiters it goes within `<…>', with `\\',
+`<' and `>' escaped by a backslash and newlines written as `\\n'.
+DESCRIPTION, also HTML, has its brackets and newlines replaced so it
+stays a valid link text."
+  (let* ((text (replace-regexp-in-string
+                "{{CODEBLOCK[0-9]+}}"
+                (lambda (p)
+                  (save-match-data
+                    (neoment-markdown--plain-code (or (cdr (assoc p codes)) p))))
+                (neoment-markdown--decode-entities
+                 (replace-regexp-in-string "<[^>]*>" "" content))
+                t t))
          (content (if (string-match-p "[][()<>\\[:space:]\n]" text)
                       (format "<%s>"
                               (string-replace
                                "\n" "\\n"
                                (replace-regexp-in-string "[\\<>]" "\\\\\\&" text)))
-                    text)))
+                    text))
+         (description
+          (and description
+               (replace-regexp-in-string
+                "[ \t\n]+" " "
+                (string-replace "[" "(" (string-replace "]" ")" (neoment-markdown--decode-entities
+                                                                description)))))))
     (if description
         (format "[Spoiler for %s](%s)" description content)
       (format "[Spoiler](%s)" content))))
+
+(defun neoment-markdown--replace-spoilers (html function)
+  "Replace the spoiler spans of HTML with the result of FUNCTION.
+FUNCTION is called with the spoiler description, or nil, and content.
+Nested spans are kept in the content.  An unclosed spoiler is left as is."
+  (let ((case-fold-search nil)
+        (start 0)
+        (parts nil))
+    (while (string-match "<span data-mx-spoiler\\(?:=\"\\([^\"]*\\)\"\\)?>" html start)
+      (let ((mb (match-beginning 0))
+            (cb (match-end 0))
+            (description (match-string 1 html))
+            (depth 1)
+            (pos (match-end 0))
+            (ce nil))
+        (while (and (null ce) (string-match "<span\\b[^>]*>\\|</span>" html pos))
+          (setq pos (match-end 0))
+          (if (string-prefix-p "</" (match-string 0 html))
+              (when (zerop (setq depth (1- depth)))
+                (setq ce (match-beginning 0)))
+            (setq depth (1+ depth))))
+        (push (substring html start mb) parts)
+        (if ce
+            (progn
+              (push (funcall function description (substring html cb ce)) parts)
+              (setq start pos))
+          (push (substring html mb cb) parts)
+          (setq start cb))))
+    (push (substring html start) parts)
+    (apply #'concat (nreverse parts))))
 
 (defun neoment-markdown-from-html (html)
   "Convert the Matrix HTML to markdown for display."
@@ -288,12 +341,9 @@ and `>' escaped by a backslash and newlines written as `\\n'."
                   (concat "<p data-mx-forwarded-notice>" any "</p>")
                   md "_↪️ Forwarded:_\n\n"))
         ;; Spoilers
-        (setq md (neoment-markdown--gsub
-                  (concat "<span data-mx-spoiler>\\(" any "\\)</span>") md
-                  (lambda (g) (preserve (neoment-markdown--spoiler nil (nth 1 g))))))
-        (setq md (neoment-markdown--gsub
-                  (concat "<span data-mx-spoiler=\"\\([^\"]*\\)\">\\(" any "\\)</span>") md
-                  (lambda (g) (preserve (neoment-markdown--spoiler (nth 1 g) (nth 2 g))))))
+        (setq md (neoment-markdown--replace-spoilers
+                  md (lambda (description content)
+                       (preserve (neoment-markdown--spoiler description content preserved)))))
         ;; Blockquotes
         (setq md (neoment-markdown--gsub
                   (concat "<blockquote[^>]*>\\(" any "\\)</blockquote>") md

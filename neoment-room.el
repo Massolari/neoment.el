@@ -214,11 +214,11 @@ backslash escapes, or bare with at most one level of balanced parentheses.")
 
 (defun neoment-room--link-destination (raw)
   "Return the URL of the markdown link destination RAW.
-A destination within `<…>' has its backslash escapes undone, `\\n'
-being a newline."
-  (if (string-prefix-p "<" raw)
+A destination within `<…>' has the escapes `\\\\', `\\<' and `\\>'
+undone, and `\\n' becomes a newline."
+  (if (and (string-prefix-p "<" raw) (string-suffix-p ">" raw) (> (length raw) 1))
       (replace-regexp-in-string
-       "\\\\\\(.\\)"
+       "\\\\\\([\\<>n]\\)"
        (lambda (m) (if (equal (match-string 1 m) "n") "\n" (match-string 1 m)))
        (substring raw 1 -1) t t)
     raw))
@@ -423,8 +423,11 @@ nil means MODE gave no faces or failed."
              (text (match-string 1 string))
              (raw (match-string 2 string))
              (url (neoment-room--link-destination raw)))
+        ;; Only the delimiters must be unclaimed: code inside the
+        ;; destination, as in a spoiler, doesn't prevent the link.
         (if (or (neoment-room--protected-p mb tb string)
-                (neoment-room--protected-p te me string))
+                (neoment-room--protected-p te (+ te 2) string)
+                (neoment-room--protected-p (1- me) me string))
             (setq pos (1+ mb))
           (let ((spoiler (string-match-p "\\`Spoiler\\(?: for .*\\)?\\'" text))
                 (face (cond
@@ -479,6 +482,20 @@ nil means MODE gave no faces or failed."
 
 (defconst neoment-room--style-cache-size 1024
   "Number of entries after which the styled body cache is cleared.")
+
+(defun neoment-room--clear-style-caches (&rest _)
+  "Clear the styled body and code caches.
+Called when the language modes may have changed."
+  (clrhash neoment-room--style-cache)
+  (clrhash neoment-room--code-cache))
+
+(add-variable-watcher 'neoment-room-code-language-modes #'neoment-room--clear-style-caches)
+
+(defun neoment-room--clear-style-cache-after-load (&rest _)
+  "Clear the styled body cache, as a loaded file may define a language mode."
+  (clrhash neoment-room--style-cache))
+
+(add-hook 'after-load-functions #'neoment-room--clear-style-cache-after-load)
 
 (defun neoment-room--style-body (body)
   "Return the markdown BODY with faces, and its markup made hideable.

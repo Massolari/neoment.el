@@ -363,6 +363,44 @@
                                            'neoment-code))
       (should (memq 'neoment-code (neoment-room-test-faces s "code"))))))
 
+(ert-deftest neoment-room-style-spoiler-edge-cases ()
+  (neoment-room-test
+    (dolist (case '(("<span data-mx-spoiler>run <code>rm</code> now</span>"
+                     "Spoiler" "run rm now")
+                    ("<span data-mx-spoiler>see <pre><code>x = 1\ny</code></pre></span>"
+                     "Spoiler" "see x = 1\ny")
+                    ("<span data-mx-spoiler><code>a &lt; b</code></span>" "Spoiler" "a < b")
+                    ("<span data-mx-spoiler>a`b`c</span>" "Spoiler" "a`b`c")
+                    ("<span data-mx-spoiler=\"plot [s1]\">secret</span>"
+                     "Spoiler for plot (s1)" "secret")
+                    ("<span data-mx-spoiler=\"a &quot;b&quot;\nc\">x</span>"
+                     "Spoiler for a \"b\" c" "x")
+                    ("<span data-mx-spoiler>a <span data-mx-color=\"#f00\">red</span> b</span> end"
+                     "Spoiler end" "a red b")))
+      (let ((s (neoment-room--style-body (neoment-markdown-from-html (nth 0 case)))))
+        (should (equal (neoment-room-test-visible s) (nth 1 case)))
+        (should (equal (get-text-property 1 'neoment-link s) (nth 2 case)))))
+    ;; An unclosed spoiler is left alone.
+    (should (equal (neoment-markdown-from-html "<span data-mx-spoiler>x") "<span data-mx-spoiler>x"))
+    ;; Only the converter's escapes are undone.
+    (should (equal (neoment-room--link-destination "<C:\\dir\\b x>") "C:\\dir\\b x"))
+    (should (equal (neoment-room--link-destination "<a\\>b\\\\c\\nd>") "a>b\\c\nd"))
+    (should (equal (neoment-room--link-destination "<abc") "<abc"))))
+
+(ert-deftest neoment-room-style-cache-invalidation ()
+  (neoment-room-test
+    (let ((body "```foo\n(defun x ())\n```")
+          (neoment-room-code-language-modes nil))
+      (should (memq 'neoment-code (neoment-room-test-faces (neoment-room--style-body body)
+                                                           "(defun")))
+      (setq neoment-room-code-language-modes '(("foo" . emacs-lisp-mode)))
+      (should (memq 'font-lock-keyword-face
+                    (neoment-room-test-faces (neoment-room--style-body body) "defun"))))
+    (neoment-room--style-body "**y**")
+    (should (> (hash-table-count neoment-room--style-cache) 0))
+    (run-hook-with-args 'after-load-functions "x.el")
+    (should (zerop (hash-table-count neoment-room--style-cache)))))
+
 (ert-deftest neoment-room-style-body-cache ()
   (neoment-room-test
     (let* ((a (neoment-room--style-body "**x**"))

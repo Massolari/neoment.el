@@ -108,18 +108,21 @@ buffer is killed without confirmation, even a compose buffer with
 unsent text.  Run `neoment' to start again."
   (interactive)
   (setq neoment--quitting t)
-  (neoment-sync-stop t)
-  (neoment-ui-cancel-timer)
-  (neoment-media-shutdown)
-  (neoment-notify-shutdown)
-  (let ((kill-buffer-query-functions nil))
-    (dolist (buffer (buffer-list))
-      (when (and (buffer-live-p buffer) (neoment--neoment-buffer-p buffer))
-        (set-buffer-modified-p nil)
-        (kill-buffer buffer))))
-  (neoment-ui-cancel-timer)
-  (run-at-time 0 nil (lambda () (setq neoment--quitting nil)))
-  (message "Neoment closed"))
+  (unwind-protect
+      (progn
+        (neoment-sync-stop t)
+        (neoment-ui-cancel-timer)
+        (neoment-media-shutdown)
+        (neoment-notify-shutdown)
+        (let ((kill-buffer-query-functions nil))
+          (dolist (buffer (buffer-list))
+            (when (and (buffer-live-p buffer) (neoment--neoment-buffer-p buffer))
+              (set-buffer-modified-p nil)
+              (kill-buffer buffer))))
+        (neoment-ui-cancel-timer)
+        (message "Neoment closed"))
+    ;; Reset even if a step above signals, so the room list keeps refreshing.
+    (run-at-time 0 nil (lambda () (setq neoment--quitting nil)))))
 
 ;;;; Dispatcher and menu
 

@@ -123,6 +123,15 @@
     (should (equal (neoment-quit-test--capturing (neoment-quit))
                    '("Neoment closed")))))
 
+(ert-deftest neoment-quit-resets-flag-when-a-step-fails ()
+  (let ((neoment--client nil) (neoment--quitting nil))
+    (cl-letf (((symbol-function 'neoment-sync-stop)
+               (lambda (&optional _) (error "Boom"))))
+      (should-error (neoment-quit)))
+    (should neoment--quitting)
+    (sleep-for 0.1)
+    (should-not neoment--quitting)))
+
 (ert-deftest neoment-rooms-quit-confirmed ()
   (let ((ran nil))
     (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) t))

@@ -149,6 +149,15 @@ Downloads write \"data\" to the requested output file."
 
 ;;;; Focusable image line
 
+(ert-deftest neoment-media-image-window-prefers-graphic ()
+  (cl-letf (((symbol-function 'get-buffer-window-list) (lambda (&rest _) '(tty-win gui-win)))
+            ((symbol-function 'window-frame) (lambda (w) (if (eq w 'gui-win) 'gui 'tty)))
+            ((symbol-function 'display-graphic-p) (lambda (frame) (eq frame 'gui)))
+            ((symbol-function 'get-buffer-window) (lambda (&rest _) 'tty-win)))
+    (should (eq (neoment-media--image-window (current-buffer)) 'gui-win))
+    (cl-letf (((symbol-function 'display-graphic-p) #'ignore))
+      (should (eq (neoment-media--image-window (current-buffer)) 'tty-win)))))
+
 (ert-deftest neoment-media-image-line ()
   (neoment-media-test
     (save-window-excursion

@@ -151,6 +151,13 @@ is the max height as a fraction of the window height."
     (cons (truncate (if image-width (min image-width max-w) max-w))
           (truncate (if image-height (min image-height max-h) max-h)))))
 
+(defun neoment-media--image-window (buffer)
+  "Return the window to size BUFFER's inline images for, or nil.
+A window on a graphical frame is preferred, from any frame."
+  (or (seq-find (lambda (w) (display-graphic-p (window-frame w)))
+                (get-buffer-window-list buffer nil t))
+      (get-buffer-window buffer t)))
+
 (defun neoment-media--create-image (file key window)
   "Return the image of FILE for message KEY sized for WINDOW, or nil."
   (let* ((message (neoment-room-get-message (neoment-get-room neoment--room-id) key))
@@ -186,7 +193,7 @@ TICK.  MARKER is released."
       (when (and (buffer-live-p buffer)
                  (= tick (buffer-local-value 'neoment-media--render-tick buffer)))
         (with-current-buffer buffer
-          (let ((image (neoment-media--create-image file key (get-buffer-window buffer t))))
+          (let ((image (neoment-media--create-image file key (neoment-media--image-window buffer))))
             (when (and image (marker-position marker)
                        (not (neoment-room--image-position key)))
               (let ((inhibit-read-only t))
@@ -208,7 +215,7 @@ TICK.  MARKER is released."
   "Add the inline images of the current room buffer (GUI frames only)."
   (cl-incf neoment-media--render-tick)
   (neoment-media--remove-images)
-  (let ((window (get-buffer-window (current-buffer) t)))
+  (let ((window (neoment-media--image-window (current-buffer))))
     (when (and window (display-graphic-p (window-frame window)) (display-images-p))
       (let ((buffer (current-buffer))
             (tick neoment-media--render-tick)
@@ -245,7 +252,7 @@ TICK.  MARKER is released."
     (when pos
       (let ((image (neoment-media--create-image
                     (get-text-property pos 'neoment-image-file) key
-                    (or (get-buffer-window (current-buffer) t) (selected-window)))))
+                    (or (neoment-media--image-window (current-buffer)) (selected-window)))))
         (when image
           (with-silent-modifications
             (put-text-property pos (1+ pos) 'display image)))))))

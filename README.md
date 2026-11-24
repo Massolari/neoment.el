@@ -23,7 +23,7 @@ Neoment needs nothing beyond Emacs. Two packages are optional:
   :commands (neoment neoment-command neoment-menu))
 ```
 
-Optional external tools: `mpv` (audio playback), `pngpaste` or `osascript` (macOS clipboard
+Optional external tools: `mpv` (audio playback, controlled from Emacs; see below), `pngpaste` or `osascript` (macOS clipboard
 images), `xclip` or `wl-paste` (Linux clipboard images).
 
 ## Quick start
@@ -99,10 +99,26 @@ rebind with `keymap-set`, and `?` shows the bindings of the mode.
 | `o` / `s` | `neoment-room-open-attachment` / `neoment-room-save-attachment` |
 | `u` / `U` | `neoment-room-upload` / `neoment-room-upload-clipboard-image` |
 | `z` | `neoment-room-toggle-image-zoom` |
+| `O` | `neoment-player-menu` |
 | `i` | `neoment-room-show-info` |
 | `N` | `neoment-room-notification-settings` |
 | `f` / `F` / `l` | room pickers and `neoment-toggle-rooms-list` |
 | `q` / `g` | `neoment-room-quit` / `revert-buffer` |
+
+### Audio player (`*neoment-player*`)
+
+Opening an audio attachment with `o` plays it with `mpv` (Windows and systems without `mpv`
+use the system program) and shows a one-line state buffer, for example
+`▶ voice.ogg  0:42 / 1:15  1.5x  vol 80`. The buffer is read-only and, while
+`neoment-player-forward-keys` is non-nil, sends every unmodified key to `mpv`, so its own
+bindings and your `input.conf` work: `SPC` pause, `<left>`/`<right>` seek, `[`/`]` speed,
+`m` mute, `9`/`0` volume, and so on. `C-` and `M-` chords keep their Emacs meaning, and `q`
+stops the player and closes the window. Bindings that need a video window have no effect.
+With the option set to nil only `SPC`, `<left>`, `<right>`, `[`, `]`, `=` and `q` are bound.
+
+From a room buffer, `O` opens `neoment-player-menu` (pause, seek, speed, stop) without
+leaving the room. Seek and speed steps are `neoment-player-seek-step` and
+`neoment-player-speed-step`.
 
 ### Compose buffer (`neoment-compose-mode-map`)
 
@@ -150,6 +166,10 @@ All options are in the `neoment` customization group (`M-x customize-group RET n
 | `neoment-room-picker-function` | `neoment-completing-read-picker` | Function `(items callback prompt)` |
 | `neoment-open-room-picker-function` | `neoment-completing-read-picker` | Same, for open rooms |
 | `neoment-on-open-attachment-function` | `neoment-media-default-open-handler` | Function `(path attachment)` |
+| `neoment-player-seek-step` | `10` | Seconds the player seeks back or forward |
+| `neoment-player-speed-step` | `0.25` | Speed change of the player's faster/slower commands |
+| `neoment-player-mpv-arguments` | `nil` | Extra `mpv` arguments, e.g. `("--volume=70")` |
+| `neoment-player-forward-keys` | `t` | Forward keys typed in the player buffer to `mpv` |
 | `neoment-rooms-display-last-message` | `message` | `no`, `message`, `sender_message`, `sender_message_inline` |
 | `neoment-rooms-room-title-format` | `room_space` | `space_room`, `room` or `room_space` |
 | `neoment-icons` | Nerd Font glyphs | Alist of icons, see below |

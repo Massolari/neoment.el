@@ -41,6 +41,7 @@
 (require 'neoment-notify)
 (require 'neoment-markdown)
 (require 'neoment-rooms)
+(require 'neoment-player)
 
 (defconst neoment-room-name-width 19
   "Width of the sender name in the gutter.")
@@ -472,6 +473,7 @@ DELETE is passed on to `buffer-substring--filter'."
   "u" #'neoment-room-upload
   "U" #'neoment-room-upload-clipboard-image
   "z" #'neoment-room-toggle-image-zoom
+  "O" #'neoment-player-menu
   "i" #'neoment-room-show-info
   "N" #'neoment-room-notification-settings
   "f" #'neoment-pick-room

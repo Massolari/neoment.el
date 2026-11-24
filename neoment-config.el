@@ -85,6 +85,24 @@ It is called with the local PATH (or a URL for locations) and the
 ATTACHMENT plist, whose `:origin' says where it came from."
   :type 'function)
 
+(defcustom neoment-player-seek-step 10
+  "Seconds the audio player seeks backward or forward."
+  :type 'number)
+
+(defcustom neoment-player-speed-step 0.25
+  "Amount the audio player changes the speed by."
+  :type 'number)
+
+(defcustom neoment-player-mpv-arguments nil
+  "Extra arguments appended to the `mpv' command line, e.g. (\"--volume=70\")."
+  :type '(repeat string))
+
+(defcustom neoment-player-forward-keys t
+  "Whether keys typed in the player buffer are forwarded to `mpv'.
+When non-nil every unmodified key is sent to mpv, so its own bindings
+(including your input.conf) apply.  `q' always stops the player."
+  :type 'boolean)
+
 (defcustom neoment-rooms-display-last-message 'message
   "How the room list shows the last message of each room."
   :type '(choice (const :tag "Do not show" no)

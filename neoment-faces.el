@@ -125,6 +125,28 @@ Its foreground is the background of `neoment-bubble-active-content'.")
 (defface neoment-comment '((t :inherit font-lock-comment-face))
   "Face for secondary text such as state messages.")
 
+(defface neoment-bold '((t :inherit bold))
+  "Face for bold text in message bodies.")
+
+(defface neoment-italic '((t :inherit italic))
+  "Face for italic text in message bodies.")
+
+(defface neoment-strike '((t :strike-through t))
+  "Face for struck-through text in message bodies.")
+
+(defface neoment-code '((t :inherit font-lock-constant-face))
+  "Face for inline code and code blocks in message bodies.")
+
+(defface neoment-heading '((t :inherit (bold font-lock-function-name-face)))
+  "Face for heading lines in message bodies.")
+
+(defface neoment-markup '((t :inherit shadow))
+  "Face for markdown markers when they are shown.
+See `neoment-room-hide-markup'.")
+
+(defface neoment-link '((t :inherit link))
+  "Face for link text in message bodies.")
+
 (defmacro neoment-faces--define-user-faces (parents)
   "Define the faces `neoment-user-1' ... inheriting from PARENTS."
   (let ((i 0) forms)

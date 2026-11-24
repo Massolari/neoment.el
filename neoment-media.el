@@ -345,24 +345,32 @@ platform cannot reach its control channel (Windows)."
           (or (plist-get (neoment-message-attachment message) :filename) "")))
 
 (defun neoment-room-open-attachment ()
-  "Open the attachment, emoticon or reaction under the cursor."
+  "Open the link, attachment, emoticon or reaction under the cursor.
+A spoiler link shows its content instead."
   (interactive)
-  (let ((mxc (neoment-media--mxc-at-point)))
-    (if mxc
-        (pcase-let ((`(,url ,title ,origin) mxc))
-          (let ((name (concat (neoment-media-sanitize title) ".png")))
-            (neoment-media-download
-             url name
-             (lambda (result)
-               (if (plist-get result :error)
-                   (neoment-notify--error
-                    (concat "Error fetching attachment: "
-                            (neoment-http-error-message (plist-get result :error))))
-                 (neoment-media--call-handler
-                  (plist-get result :ok)
-                  (list :type 'image :mimetype "image/png"
-                        :url (neoment-events-mxc-to-url url) :mxc-url url
-                        :filename name :origin origin)))))))
+  (let ((link (get-text-property (point) 'neoment-link))
+        (mxc (neoment-media--mxc-at-point)))
+    (cond
+     ((and link (get-text-property (point) 'neoment-spoiler))
+      (neoment-notify--message link))
+     ((and link (not (neoment-events-mxc-p link)))
+      (browse-url link))
+     (mxc
+      (pcase-let ((`(,url ,title ,origin) mxc))
+        (let ((name (concat (neoment-media-sanitize title) ".png")))
+          (neoment-media-download
+           url name
+           (lambda (result)
+             (if (plist-get result :error)
+                 (neoment-notify--error
+                  (concat "Error fetching attachment: "
+                          (neoment-http-error-message (plist-get result :error))))
+               (neoment-media--call-handler
+                (plist-get result :ok)
+                (list :type 'image :mimetype "image/png"
+                      :url (neoment-events-mxc-to-url url) :mxc-url url
+                      :filename name :origin origin))))))))
+     (t
       (let* ((message (neoment-room-message-at-point))
              (attachment (and message (neoment-message-attachment message))))
         (cond
@@ -386,7 +394,7 @@ platform cannot reach its control channel (Windows)."
                  (neoment-notify--message (format "Opening attachment %s..." filename))
                  (neoment-media--call-handler
                   (plist-get result :ok)
-                  (append (list :origin 'message) attachment))))))))))))
+                  (append (list :origin 'message) attachment)))))))))))))
 
 (defvar-local neoment-media--image-buffer-path nil
   "File shown by a `neoment-media--show-image-buffer' buffer.")

@@ -652,6 +652,66 @@ Downloads write \"data\" to the requested output file."
           (should (equal (plist-get (cadr (car got)) :mimetype) "image/png"))
           (kill-buffer buffer))))))
 
+(ert-deftest neoment-media-open-links ()
+  (neoment-media-test
+    (save-window-excursion
+      (let* ((got nil)
+             (browsed nil)
+             (neoment-on-open-attachment-function (lambda (path att) (push (list path att) got))))
+        (cl-letf (((symbol-function 'browse-url) (lambda (url &rest _) (push url browsed))))
+          ;; Open a link
+          (let ((buffer (neoment-media-test-buffer
+                         (neoment-message--create :id "$k" :sender "@a:s"
+                                                  :content "see [docs](https://example.org)"
+                                                  :timestamp 1000
+                                                  :attachment '(:type file :filename "f.pdf"
+                                                                      :mxc-url "mxc://s/f")))))
+            (search-forward "[do")
+            (neoment-room-open-attachment)
+            (should (equal browsed '("https://example.org")))
+            (should-not got)
+            (should-not (neoment-test-message-p "Fetching attachment f.pdf..."))
+            ;; Elsewhere on the line, the attachment is opened as before.
+            (beginning-of-line)
+            (search-forward "see")
+            (neoment-room-open-attachment)
+            (should (neoment-test-message-p "Fetching attachment f.pdf..."))
+            (kill-buffer buffer))
+          ;; Reveal a spoiler
+          (let ((buffer (neoment-media-test-buffer
+                         (neoment-message--create :id "$s" :sender "@a:s"
+                                                  :content "[Spoiler](<the end>)"
+                                                  :timestamp 1000))))
+            (search-forward "Spoi")
+            (neoment-room-open-attachment)
+            (should (neoment-test-message-p "the end"))
+            (should (equal browsed '("https://example.org")))
+            (kill-buffer buffer))
+          ;; mouse-1 on the link text opens it at the click position.
+          (let ((buffer (neoment-media-test-buffer
+                         (neoment-message--create :id "$m" :sender "@a:s"
+                                                  :content "[Alice](https://matrix.to/#/@alice:s)"
+                                                  :timestamp 1000))))
+            (let ((pos (save-excursion (search-forward "Ali"))))
+              (should (eq (lookup-key (get-text-property pos 'keymap) [mouse-1])
+                          #'neoment-room-open-link-at-mouse))
+              (cl-letf (((symbol-function 'mouse-set-point)
+                         (lambda (event &rest _) (goto-char (posn-point (event-start event))))))
+                (neoment-room-open-link-at-mouse
+                 `(mouse-1 (,(selected-window) ,pos (0 . 0) 0)))))
+            (should (equal (car browsed) "https://matrix.to/#/@alice:s"))
+            (kill-buffer buffer)))
+        ;; An mxc emoticon still downloads as before.
+        (let ((buffer (neoment-media-test-buffer
+                       (neoment-message--create :id "$e2" :sender "@a:s"
+                                                :content "[img: :ok:](mxc://s/ok)"
+                                                :timestamp 1000))))
+          (search-forward "img")
+          (neoment-room-open-attachment)
+          (should (equal (file-name-nondirectory (car (car got))) "_ok_.png"))
+          (should (eq (plist-get (cadr (car got)) :origin) 'emoticon))
+          (kill-buffer buffer))))))
+
 (ert-deftest neoment-media-default-handler ()
   (let (opened played)
     (cl-letf (((symbol-function 'neoment-media--system-open) (lambda (p) (setq opened p)))

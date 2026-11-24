@@ -116,10 +116,10 @@
                            (neoment-room-test-ts 9 1 0) :is-state t)
     (let ((text (neoment-room-render "!r:s")))
       (cl-flet ((face-at (s) (ensure-list (get-text-property (string-search s text) 'face text))))
-        (should (memq 'neoment-mention-user (face-at "[Me]")))
-        (should (memq 'neoment-mention (face-at "[Bob]")))
-        (should (memq 'neoment-emoticon (face-at "[img: :party:]")))
-        (should-not (memq 'neoment-emoticon (face-at "[img: x]")))
+        (should (memq 'neoment-mention-user (face-at "Me](")))
+        (should (memq 'neoment-mention (face-at "Bob](")))
+        (should (memq 'neoment-emoticon (face-at "img: :party:](")))
+        (should-not (memq 'neoment-emoticon (face-at "img: x](")))
         (should (memq 'neoment-user-1 (face-at "Alice")))
         (should (memq 'neoment-separator (face-at " │ hi")))
         (should (memq 'neoment-comment (face-at "Membership")))
@@ -213,6 +213,206 @@
       (should (eq (get-text-property (string-search "New room" text) 'face text)
                   'neoment-tombstone)))))
 
+;;;; Markdown styling
+
+(defun neoment-room-test-faces (string sub &optional from)
+  "Return the faces at the start of SUB in STRING, searching from FROM."
+  (ensure-list (get-text-property (string-search sub string from) 'face string)))
+
+(defun neoment-room-test-visible (string)
+  "Return the text of STRING without the characters hidden as markup."
+  (let ((result nil))
+    (dotimes (i (length string))
+      (unless (eq (get-text-property i 'invisible string) 'neoment-markup)
+        (push (aref string i) result)))
+    (concat (nreverse result))))
+
+(defun neoment-room-test-no-face-p (string face)
+  "Return non-nil when no character of STRING has FACE."
+  (let ((found nil))
+    (dotimes (i (length string))
+      (when (memq face (ensure-list (get-text-property i 'face string)))
+        (setq found t)))
+    (not found)))
+
+(ert-deftest neoment-room-style-emphasis ()
+  (neoment-room-test
+    ;; Bold text
+    (let ((s (neoment-room--style-body "say **this** now")))
+      (should (memq 'neoment-bold (neoment-room-test-faces s "this")))
+      (should (equal (neoment-room-test-visible s) "say this now"))
+      (should (neoment-room-test-no-face-p (substring s 0 4) 'neoment-bold))
+      (should (neoment-room-test-no-face-p (substring s 12) 'neoment-bold)))
+    (let ((s (neoment-room--style-body "a __b__ c")))
+      (should (memq 'neoment-bold (neoment-room-test-faces s "b")))
+      (should (equal (neoment-room-test-visible s) "a b c")))
+    ;; Italic forwarded notice
+    (let ((s (neoment-room--style-body
+              (neoment-markdown-from-html "<p data-mx-forwarded-notice>Forwarded message</p>hello"))))
+      (should (memq 'neoment-italic (neoment-room-test-faces s "↪️ Forwarded:")))
+      (should (memq 'neoment-italic (neoment-room-test-faces s "Forwarded:"))))
+    (let ((s (neoment-room--style-body "an *it* word")))
+      (should (memq 'neoment-italic (neoment-room-test-faces s "it")))
+      (should (equal (neoment-room-test-visible s) "an it word")))
+    ;; Underscores inside a word
+    (should (neoment-room-test-no-face-p (neoment-room--style-body "snake_case_name")
+                                         'neoment-italic))
+    ;; Lone asterisk
+    (should (neoment-room-test-no-face-p (neoment-room--style-body "2 * 3 * 4") 'neoment-italic))
+    ;; Strikethrough
+    (let ((s (neoment-room--style-body "~~old~~ new")))
+      (should (memq 'neoment-strike (neoment-room-test-faces s "old")))
+      (should (neoment-room-test-no-face-p (substring s 7) 'neoment-strike)))
+    ;; Nested italic in bold
+    (let ((s (neoment-room--style-body "**a *b* c**")))
+      (should (memq 'neoment-italic (neoment-room-test-faces s "b")))
+      (should (memq 'neoment-bold (neoment-room-test-faces s "b"))))
+    ;; Markers are hideable markup, in the markup face.
+    (let ((s (neoment-room--style-body "**this**")))
+      (should (eq (get-text-property 0 'invisible s) 'neoment-markup))
+      (should (memq 'neoment-markup (neoment-room-test-faces s "**")))
+      (should-not (text-property-any 0 (length s) 'neoment--protected t s)))))
+
+(ert-deftest neoment-room-style-inline-code ()
+  (neoment-room-test
+    ;; Inline code keeps asterisks
+    (let ((s (neoment-room--style-body "run `a**b**c`")))
+      (should (memq 'neoment-code (neoment-room-test-faces s "a**b**c")))
+      (should (neoment-room-test-no-face-p s 'neoment-bold))
+      (should (equal (neoment-room-test-visible s) "run a**b**c")))
+    ;; No link inside code
+    (let ((s (neoment-room--style-body "`[a](https://x)`")))
+      (should-not (get-text-property 2 'neoment-link s))
+      (should (equal (neoment-room-test-visible s) "[a](https://x)")))))
+
+(ert-deftest neoment-room-style-headings ()
+  (neoment-room-test
+    ;; Second-level heading
+    (let ((s (neoment-room--style-body "## Notes")))
+      (should (equal (neoment-room-test-visible s) "## Notes"))
+      (dotimes (i (length s))
+        (should (memq 'neoment-heading (ensure-list (get-text-property i 'face s))))))
+    (let ((s (neoment-room--style-body "intro\n# Title\n#tag")))
+      (should (memq 'neoment-heading (neoment-room-test-faces s "# Title")))
+      (should (neoment-room-test-no-face-p (substring s 0 6) 'neoment-heading))
+      (should-not (memq 'neoment-heading (neoment-room-test-faces s "#tag"))))))
+
+(ert-deftest neoment-room-style-links ()
+  (neoment-room-test
+    ;; Mention shows the name
+    (let ((s (neoment-room--style-body "hi [Alice](https://matrix.to/#/@alice:s)")))
+      (should (equal (neoment-room-test-visible s) "hi Alice"))
+      (should (memq 'neoment-mention (neoment-room-test-faces s "Alice")))
+      (should (equal (get-text-property 3 'neoment-link s) "https://matrix.to/#/@alice:s")))
+    (let ((s (neoment-room--style-body "[Me](https://matrix.to/#/@me:s)")))
+      (should (memq 'neoment-mention-user (neoment-room-test-faces s "Me"))))
+    ;; Mention with underscores
+    (should (neoment-room-test-no-face-p
+             (neoment-room--style-body "[Foo](https://matrix.to/#/@foo_bar_baz:s)")
+             'neoment-italic))
+    ;; Spoiler hidden
+    (let ((s (neoment-room--style-body "[Spoiler](<the end>)")))
+      (should (equal (neoment-room-test-visible s) "Spoiler"))
+      (should-not (get-text-property 1 'help-echo s))
+      (should (equal (get-text-property 1 'neoment-link s) "the end")))
+    (let ((s (neoment-room--style-body "[Spoiler for ending](<The character dies>)")))
+      (should (equal (neoment-room-test-visible s) "Spoiler for ending")))
+    ;; Plain link
+    (let ((s (neoment-room--style-body "see [docs](https://example.org)")))
+      (should (equal (neoment-room-test-visible s) "see docs"))
+      (should (memq 'neoment-link (neoment-room-test-faces s "docs")))
+      (should (equal (get-text-property (string-search "docs" s) 'help-echo s)
+                     "https://example.org"))
+      (should (eq (get-text-property (string-search "docs" s) 'mouse-face s) 'highlight))
+      (should (eq (get-text-property (string-search "docs" s) 'keymap s)
+                  neoment-room-link-map)))
+    ;; Emoticon keeps its property; link text is still scanned for emphasis.
+    (let ((s (neoment-room--style-body "[img: :party:](mxc://s/p) [**b**](https://x)")))
+      (should (equal (neoment-room-test-visible s) "img: :party: b"))
+      (should (memq 'neoment-emoticon (neoment-room-test-faces s "img")))
+      (should (equal (get-text-property 1 'neoment-emoticon s)
+                     '(:title ":party:" :url "mxc://s/p")))
+      (should (memq 'neoment-bold (neoment-room-test-faces s "b**](")))
+      (should (memq 'neoment-link (neoment-room-test-faces s "b**]("))))))
+
+(ert-deftest neoment-room-style-code-blocks ()
+  (neoment-room-test
+    ;; Unknown or missing language
+    (dolist (open '("```" "```nosuchlanguage"))
+      (let ((s (neoment-room--style-body (concat open "\na *b* c\n```"))))
+        (should (memq 'neoment-code (neoment-room-test-faces s "a *b* c")))
+        (should (neoment-room-test-no-face-p s 'neoment-italic))
+        (should (equal (neoment-room-test-visible s)
+                       (concat (substring open 3) "\na *b* c\n")))))
+    ;; Unclosed block runs to the end, and text after a block is styled.
+    (let ((s (neoment-room--style-body "```\n**x**")))
+      (should (neoment-room-test-no-face-p s 'neoment-bold)))
+    (let ((s (neoment-room--style-body "```\ncode\n```\n**x**")))
+      (should (memq 'neoment-bold (neoment-room-test-faces s "x"))))
+    ;; The language name is shown in the markup face.
+    (let ((s (neoment-room--style-body "```nosuchlanguage\nx\n```")))
+      (should (memq 'neoment-markup (neoment-room-test-faces s "nosuchlanguage")))
+      (should-not (get-text-property 3 'invisible s)))))
+
+(define-derived-mode neoment-room-test-broken-mode prog-mode "Broken"
+  "A mode that fails while fontifying."
+  (setq-local font-lock-defaults '(nil))
+  (setq-local font-lock-ensure-function (lambda (&rest _) (error "Broken"))))
+
+(ert-deftest neoment-room-style-code-fontification ()
+  (neoment-room-test
+    (clrhash neoment-room--code-cache)
+    ;; Known language
+    (let ((s (neoment-room--style-body "```elisp\n(defun f () \"doc\")\n```")))
+      (should (memq 'font-lock-keyword-face (neoment-room-test-faces s "defun")))
+      (should (seq-some (lambda (f) (memq f '(font-lock-string-face font-lock-doc-face)))
+                        (neoment-room-test-faces s "\"doc\"")))
+      (should (equal (neoment-room-test-visible s) "elisp\n(defun f () \"doc\")\n")))
+    ;; Cache hit: the second render doesn't fontify again.
+    (should (gethash '(emacs-lisp-mode . "(defun f () \"doc\")") neoment-room--code-cache))
+    (let ((calls 0))
+      (advice-add 'font-lock-ensure :before (lambda (&rest _) (cl-incf calls))
+                  '((name . neoment-room-test-count)))
+      (unwind-protect
+          (progn
+            (neoment-room--style-body "```elisp\n(defun f () \"doc\")\n```")
+            (should (= calls 0))
+            (neoment-room--style-body "```elisp\n(defun g () 1)\n```")
+            (should (= calls 1)))
+        (advice-remove 'font-lock-ensure 'neoment-room-test-count)))
+    ;; Erroring mode falls back to the code face.
+    (let* ((neoment-room-code-language-modes '(("broken" . neoment-room-test-broken-mode)))
+           (s (neoment-room--style-body "```broken\n(defun f ())\n```")))
+      (should (memq 'neoment-code (neoment-room-test-faces s "(defun")))
+      (should (eq (gethash '(neoment-room-test-broken-mode . "(defun f ())")
+                           neoment-room--code-cache)
+                  :none)))
+    ;; Modes outside the alias table and `auto-mode-alist' are never run.
+    (should-not (neoment-room--code-mode "server"))
+    (should-not (neoment-room--code-mode "neoment-room"))
+    (should (eq (neoment-room--code-mode "ELISP") 'emacs-lisp-mode))
+    ;; The cache is capped.
+    (let ((neoment-room--code-cache (make-hash-table :test #'equal)))
+      (dotimes (i (1+ neoment-room--code-cache-size))
+        (neoment-room--fontify-code 'emacs-lisp-mode (format "(f %d)" i)))
+      (should (<= (hash-table-count neoment-room--code-cache) neoment-room--code-cache-size)))))
+
+(ert-deftest neoment-room-render-styled-reply ()
+  (neoment-room-test
+    (let ((orig (neoment-room-test-msg room "$a" "@alice:s" "see **x** here"
+                                       (neoment-room-test-ts 9 0 0))))
+      (neoment-room-test-msg room "$b" "@bob:s" "ok `y`" (neoment-room-test-ts 9 1 0)
+                             :replying-to (copy-neoment-message orig))
+      (neoment-room-test-msg room "$c" "@carol:s" "*cap*" (neoment-room-test-ts 9 2 0)
+                             :attachment '(:type image :filename "p.png" :mimetype "image/png"))
+      (let* ((text (neoment-room-render "!r:s"))
+             (quote (string-search "┃ see" text))
+             (x (string-search "x" text quote)))
+        (should (memq 'neoment-bold (ensure-list (get-text-property x 'face text))))
+        (should (memq 'neoment-comment (ensure-list (get-text-property x 'face text))))
+        (should (memq 'neoment-code (neoment-room-test-faces text "y`")))
+        (should (memq 'neoment-italic (neoment-room-test-faces text "cap")))))))
+
 ;;;; 5.2 Mode
 
 (defun neoment-room-test-buffer ()
@@ -270,6 +470,85 @@
           (neoment-room-render-buffer)
           (should (looking-at "essage"))
           (should (equal (get-text-property (point) 'neoment-message) "$2"))))
+      (kill-buffer buffer))))
+
+;;;; Hiding and copying markup
+
+(defun neoment-room-test-visible-line ()
+  "Return the visible text of the current line."
+  (let ((result nil))
+    (dotimes (i (- (line-end-position) (line-beginning-position)))
+      (let ((pos (+ (line-beginning-position) i)))
+        (unless (invisible-p pos)
+          (push (char-after pos) result))))
+    (concat (nreverse result))))
+
+(ert-deftest neoment-room-hide-markup ()
+  (neoment-room-test
+    (neoment-room-test-msg room "$a" "@alice:s" "**this**" (neoment-room-test-ts 9 12 44))
+    (neoment-room-test-msg room "$b" "@bob:s" "[Alice](https://matrix.to/#/@alice:s)"
+                           (neoment-room-test-ts 9 13 0))
+    (neoment-room-test-msg room "$c" "@carol:s" "```elisp\n(car x)\n```"
+                           (neoment-room-test-ts 9 14 0))
+    (let ((neoment-room-hide-markup t)
+          (buffer nil))
+      (setq buffer (neoment-room-test-buffer))
+      (with-current-buffer buffer
+        (cl-flet ((pos-of (s) (save-excursion (goto-char (point-min)) (search-forward s)
+                                              (match-beginning 0)))
+                  (line-of (s) (save-excursion (goto-char (point-min)) (search-forward s)
+                                               (neoment-room-test-visible-line))))
+          ;; Default display
+          (should (equal (line-of "**this") "09:12:44               Alice │ this"))
+          (should (memq 'neoment-bold (ensure-list (get-text-property (pos-of "this*") 'face))))
+          (should (invisible-p (pos-of "**this")))
+          (should (equal (line-of "[Alice]") "09:13:00                 Bob │ Alice"))
+          (should (invisible-p (pos-of "](https")))
+          (should (invisible-p (pos-of "matrix.to")))
+          ;; Code fence display
+          (should (equal (line-of "```elisp") "09:14:00               Carol │ elisp"))
+          (should-not (invisible-p (pos-of "elisp")))
+          (should (equal (line-of "(car x)") (neoment-room-test-gutter "(car x)")))
+          (should (equal (save-excursion (goto-char (pos-of "(car x)")) (forward-line 1)
+                                         (neoment-room-test-visible-line))
+                         (neoment-room-test-gutter)))
+          ;; Markup shown
+          (setq neoment-room-hide-markup nil)
+          (revert-buffer)
+          (should (equal (line-of "**this") "09:12:44               Alice │ **this**"))
+          (should-not (invisible-p (pos-of "**this")))
+          (should (memq 'neoment-markup (ensure-list (get-text-property (pos-of "**this") 'face))))
+          (should-not (invisible-p (pos-of "](https")))
+          (should-not (invisible-p (pos-of "```elisp")))
+          ;; And hidden again
+          (setq neoment-room-hide-markup t)
+          (revert-buffer)
+          (should (invisible-p (pos-of "**this")))))
+      (kill-buffer buffer))))
+
+(ert-deftest neoment-room-copy-keeps-markdown ()
+  (neoment-room-test
+    (neoment-room-test-msg room "$a" "@alice:s" "**this**" (neoment-room-test-ts 9 12 44))
+    (neoment-room-test-msg room "$b" "@bob:s" "[Alice](https://matrix.to/#/@alice:s)"
+                           (neoment-room-test-ts 9 13 0))
+    (let ((buffer (neoment-room-test-buffer)))
+      (with-current-buffer buffer
+        (cl-flet ((copy-line (s) (save-excursion
+                                   (goto-char (point-min)) (search-forward s)
+                                   (filter-buffer-substring (line-beginning-position)
+                                                            (line-end-position)))))
+          ;; Copy a bold message
+          (should (equal (copy-line "**this") "**this**"))
+          ;; Copy a mention
+          (should (equal (copy-line "[Alice]") "[Alice](https://matrix.to/#/@alice:s)")))
+        ;; The cursor keeps its message and offset across a re-render.
+        (goto-char (point-min))
+        (search-forward "**th")
+        (should (looking-at "is\\*\\*"))
+        (neoment-room-test-msg room "$0" "@carol:s" "*zero*\nmore" (neoment-room-test-ts 8 0 0))
+        (neoment-room-render-buffer)
+        (should (looking-at "is\\*\\*"))
+        (should (equal (get-text-property (point) 'neoment-message) "$a")))
       (kill-buffer buffer))))
 
 ;;;; 5.4 History and opening

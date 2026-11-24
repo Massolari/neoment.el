@@ -96,7 +96,7 @@ rebind with `keymap-set`, and `?` shows the bindings of the mode.
 | `V` | `neoment-room-show-event` |
 | `P` | `neoment-room-load-previous` |
 | `L` | `neoment-room-leave` |
-| `o` / `s` | `neoment-room-open-attachment` / `neoment-room-save-attachment` |
+| `o` / `s` | `neoment-room-open-attachment` (open the link, attachment or emoticon at point; on a spoiler, show its content) / `neoment-room-save-attachment` |
 | `u` / `U` | `neoment-room-upload` / `neoment-room-upload-clipboard-image` |
 | `z` | `neoment-room-toggle-image-zoom` (on a message header line) |
 | `O` | `neoment-player-menu` |
@@ -185,6 +185,7 @@ All options are in the `neoment` customization group (`M-x customize-group RET n
 | `neoment-player-speed-step` | `0.25` | Speed change of the player's faster/slower commands |
 | `neoment-player-mpv-arguments` | `nil` | Extra `mpv` arguments, e.g. `("--volume=70")` |
 | `neoment-player-forward-keys` | `t` | Forward keys typed in the player buffer to `mpv` |
+| `neoment-room-hide-markup` | `t` | Hide markdown markers and link URLs in room buffers (`nil` shows them dimmed) |
 | `neoment-rooms-display-last-message` | `message` | `no`, `message`, `sender_message`, `sender_message_inline` |
 | `neoment-rooms-room-title-format` | `room_space` | `space_room`, `room` or `room_space` |
 | `neoment-icons` | Nerd Font glyphs | Alist of icons, see below |

@@ -218,10 +218,18 @@ In TEMPLATE, %N stands for group N."
 ;;;; HTML -> markdown
 
 (defun neoment-markdown--spoiler (description content)
-  "Return the markdown of a spoiler with DESCRIPTION and CONTENT."
-  (let ((content (if (string-match-p "[[:space:]]" content)
-                     (format "<%s>" content)
-                   content)))
+  "Return the markdown of a spoiler with DESCRIPTION and CONTENT.
+CONTENT is HTML: its tags are dropped and its entities decoded.  When
+it has spaces or link delimiters it goes within `<…>', with `\\', `<'
+and `>' escaped by a backslash and newlines written as `\\n'."
+  (let* ((text (neoment-markdown--decode-entities
+                (replace-regexp-in-string "<[^>]*>" "" content)))
+         (content (if (string-match-p "[][()<>\\[:space:]\n]" text)
+                      (format "<%s>"
+                              (string-replace
+                               "\n" "\\n"
+                               (replace-regexp-in-string "[\\<>]" "\\\\\\&" text)))
+                    text)))
     (if description
         (format "[Spoiler for %s](%s)" description content)
       (format "[Spoiler](%s)" content))))
@@ -282,10 +290,10 @@ In TEMPLATE, %N stands for group N."
         ;; Spoilers
         (setq md (neoment-markdown--gsub
                   (concat "<span data-mx-spoiler>\\(" any "\\)</span>") md
-                  (lambda (g) (neoment-markdown--spoiler nil (nth 1 g)))))
+                  (lambda (g) (preserve (neoment-markdown--spoiler nil (nth 1 g))))))
         (setq md (neoment-markdown--gsub
                   (concat "<span data-mx-spoiler=\"\\([^\"]*\\)\">\\(" any "\\)</span>") md
-                  (lambda (g) (neoment-markdown--spoiler (nth 1 g) (nth 2 g)))))
+                  (lambda (g) (preserve (neoment-markdown--spoiler (nth 1 g) (nth 2 g))))))
         ;; Blockquotes
         (setq md (neoment-markdown--gsub
                   (concat "<blockquote[^>]*>\\(" any "\\)</blockquote>") md

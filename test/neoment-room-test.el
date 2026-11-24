@@ -22,6 +22,7 @@
              (neoment-client-room-changed-functions nil))
          (neoment-test-new-client)
          (neoment-events-reset-caches)
+         (clrhash neoment-room--style-cache)
          (let ((room (neoment-get-room "!r:s")))
            (setf (neoment-room-name room) "dev")
            (neoment-room-set-tracked room t)
@@ -334,6 +335,49 @@
                      '(:title ":party:" :url "mxc://s/p")))
       (should (memq 'neoment-bold (neoment-room-test-faces s "b**](")))
       (should (memq 'neoment-link (neoment-room-test-faces s "b**]("))))))
+
+(ert-deftest neoment-room-style-link-destinations ()
+  (neoment-room-test
+    ;; URL with balanced parentheses
+    (let ((s (neoment-room--style-body "[wiki](https://en.wikipedia.org/wiki/Foo_(bar)) end")))
+      (should (equal (neoment-room-test-visible s) "wiki end"))
+      (should (equal (get-text-property 1 'neoment-link s)
+                     "https://en.wikipedia.org/wiki/Foo_(bar)")))
+    ;; Spoilers as produced by the converter: parentheses, `>' and newlines
+    (dolist (case '(("<span data-mx-spoiler>f(x)</span>" . "f(x)")
+                    ("<span data-mx-spoiler>a &gt; b</span>" . "a > b")
+                    ("<span data-mx-spoiler>a\\b &lt;c&gt;</span>" . "a\\b <c>")
+                    ("<span data-mx-spoiler>secret1<br>more secret</span>"
+                     . "secret1\nmore secret")
+                    ("<span data-mx-spoiler>so <b>bold</b></span>" . "so bold")))
+      (let ((s (neoment-room--style-body (neoment-markdown-from-html (car case)))))
+        (should (equal (neoment-room-test-visible s) "Spoiler"))
+        (should-not (string-search "\n" (neoment-room-test-visible s)))
+        (should (equal (get-text-property 1 'neoment-link s) (cdr case)))))))
+
+(ert-deftest neoment-room-style-fence-info-string ()
+  (neoment-room-test
+    ;; Only the code is styled when the info string has a space.
+    (let ((s (neoment-room--style-body "Some intro text here and more\n```text x\ncode\n```")))
+      (should (neoment-room-test-no-face-p (substring s 0 (string-search "\n" s))
+                                           'neoment-code))
+      (should (memq 'neoment-code (neoment-room-test-faces s "code"))))))
+
+(ert-deftest neoment-room-style-body-cache ()
+  (neoment-room-test
+    (let* ((a (neoment-room--style-body "**x**"))
+           (b (neoment-room--style-body "**x**")))
+      (should-not (eq a b))
+      (should (equal-including-properties a b))
+      ;; Changing a returned string doesn't change later results.
+      (put-text-property 0 5 'face 'error a)
+      (should (memq 'neoment-bold (neoment-room-test-faces (neoment-room--style-body "**x**")
+                                                           "x"))))
+    (let ((neoment-room--style-cache (make-hash-table :test #'equal)))
+      (dotimes (i (1+ neoment-room--style-cache-size))
+        (neoment-room--style-body (format "*%d*" i)))
+      (should (<= (hash-table-count neoment-room--style-cache)
+                  neoment-room--style-cache-size)))))
 
 (ert-deftest neoment-room-style-code-blocks ()
   (neoment-room-test

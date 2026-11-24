@@ -204,9 +204,24 @@ CAPTION is nil when there is none."
 ;;;; Markdown styling
 
 (defconst neoment-room--link-regexp
-  "\\[\\([^]\n]*\\)\\](\\(<[^>\n]*>\\|[^)[:space:]]+\\))"
+  (concat "\\[\\([^]\n]*\\)\\]("
+          "\\(<\\(?:[^<>\\\n]\\|\\\\[^\n]\\)*>"
+          "\\|\\(?:[^() \t\n]\\|([^() \t\n]*)\\)+\\)"
+          ")")
   "Regexp matching a markdown link.
-Group 1 is the text, group 2 the destination, possibly within `<…>'.")
+Group 1 is the text, group 2 the destination: either within `<…>', with
+backslash escapes, or bare with at most one level of balanced parentheses.")
+
+(defun neoment-room--link-destination (raw)
+  "Return the URL of the markdown link destination RAW.
+A destination within `<…>' has its backslash escapes undone, `\\n'
+being a newline."
+  (if (string-prefix-p "<" raw)
+      (replace-regexp-in-string
+       "\\\\\\(.\\)"
+       (lambda (m) (if (equal (match-string 1 m) "n") "\n" (match-string 1 m)))
+       (substring raw 1 -1) t t)
+    raw))
 
 (defconst neoment-room--fence-regexp "^\\(```\\)[ \t]*\\([^`\n]*?\\)[ \t]*$"
   "Regexp matching the opening line of a fenced code block.")
@@ -358,8 +373,8 @@ nil means MODE gave no faces or failed."
              (ticks-end (match-end 1))
              (info-beg (match-beginning 2))
              (info-end (match-end 2))
-             (lang (car (split-string (match-string 2 string))))
              (code-beg (min (length string) (1+ (match-end 0))))
+             (lang (car (save-match-data (split-string (match-string 2 string)))))
              (close (and (< code-beg (length string))
                          (string-match neoment-room--fence-close-regexp string code-beg)
                          (cons (match-beginning 1) (match-end 1))))
@@ -407,7 +422,7 @@ nil means MODE gave no faces or failed."
              (tb (match-beginning 1)) (te (match-end 1))
              (text (match-string 1 string))
              (raw (match-string 2 string))
-             (url (if (string-prefix-p "<" raw) (substring raw 1 -1) raw)))
+             (url (neoment-room--link-destination raw)))
         (if (or (neoment-room--protected-p mb tb string)
                 (neoment-room--protected-p te me string))
             (setq pos (1+ mb))
@@ -459,18 +474,32 @@ nil means MODE gave no faces or failed."
             (neoment-room--markup cb ce string)
             (setq pos ce)))))))
 
+(defvar neoment-room--style-cache (make-hash-table :test #'equal)
+  "Cache of styled bodies, from (USER-ID . BODY) to the styled string.")
+
+(defconst neoment-room--style-cache-size 1024
+  "Number of entries after which the styled body cache is cleared.")
+
 (defun neoment-room--style-body (body)
   "Return the markdown BODY with faces, and its markup made hideable.
 Markers stay in the text with the `invisible' property
-`neoment-markup', so copying keeps the markdown."
-  (let ((string (copy-sequence body)))
-    (neoment-room--style-fences string)
-    (neoment-room--style-inline-code string)
-    (neoment-room--style-links string)
-    (neoment-room--style-headings string)
-    (neoment-room--style-emphasis string)
-    (remove-text-properties 0 (length string) '(neoment--protected nil) string)
-    string))
+`neoment-markup', so copying keeps the markdown.  Results are cached,
+since every render restyles every message."
+  (let* ((key (cons (neoment-user-id) (substring-no-properties body)))
+         (cached (gethash key neoment-room--style-cache)))
+    (unless cached
+      (setq cached (copy-sequence body))
+      (neoment-room--style-fences cached)
+      (neoment-room--style-inline-code cached)
+      (neoment-room--style-links cached)
+      (neoment-room--style-headings cached)
+      (neoment-room--style-emphasis cached)
+      (remove-text-properties 0 (length cached) '(neoment--protected nil) cached)
+      (when (>= (hash-table-count neoment-room--style-cache)
+                neoment-room--style-cache-size)
+        (clrhash neoment-room--style-cache))
+      (puthash key cached neoment-room--style-cache))
+    (copy-sequence cached)))
 
 (defun neoment-room--style-line (line)
   "Return the body LINE with the quote face added when it is a quote."

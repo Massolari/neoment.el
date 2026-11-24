@@ -206,10 +206,11 @@ THREAD-ROOT-ID, RELATION and ATTACHMENT are as in `neoment-compose-open'."
                  (_ (if thread-root-id
                         (concat "Sending to thread in " room)
                       (concat "Sending to " room))))))
-    (concat "neoment://compose/" name
+    (concat "*neoment-compose: " name
             (if attachment
                 (concat " with the attachment " (plist-get attachment :filename))
-              ""))))
+              "")
+            "*")))
 
 (cl-defun neoment-compose-open (room-id &key thread-root-id relation attachment)
   "Open a compose buffer for ROOM-ID below the selected window.

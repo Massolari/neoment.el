@@ -769,11 +769,14 @@ the default size.")
 
 (defun neoment-room-buffer-name (room-id)
   "Return the buffer name of ROOM-ID."
-  (format "neoment://room/%s/%s" room-id (neoment-room-display-name-with-space room-id)))
+  (format "*neoment-room: %s*" (neoment-room-display-name-with-space room-id)))
 
-(defun neoment-room-thread-buffer-name (root-id author)
-  "Return the buffer name of the thread ROOT-ID started by AUTHOR."
-  (format "neoment://thread/%s/sender/%s" root-id author))
+(defun neoment-room-thread-buffer-name (room-id author)
+  "Return the buffer name of a thread in ROOM-ID started by AUTHOR.
+AUTHOR is nil when the thread root is not loaded yet."
+  (format "*neoment-thread: %s in %s*"
+          (if (or (null author) (string-empty-p author)) "unknown author" author)
+          (neoment-room-display-name room-id)))
 
 (defun neoment-room-buffers (room-id)
   "Return the live room and thread buffers of ROOM-ID."
@@ -1237,7 +1240,7 @@ unless SILENT."
              (buffer (or existing
                          (generate-new-buffer
                           (neoment-room-thread-buffer-name
-                           root-id (neoment-display-name
+                           room-id (neoment-display-name
                                     (and root (neoment-message-sender root))))))))
         (unless existing
           (neoment-room--setup-buffer

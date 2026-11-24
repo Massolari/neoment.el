@@ -447,11 +447,17 @@ room changed."
       (neoment-room-set-read-receipt room last))
     changed))
 
+(defun neoment-events--aliases (content)
+  "Return the non-empty aliases of the `m.room.canonical_alias' CONTENT.
+The canonical alias comes first, followed by the alternative aliases."
+  (seq-filter (lambda (alias) (and (stringp alias) (not (string-empty-p alias))))
+              (cons (alist-get 'alias content)
+                    (append (alist-get 'alt_aliases content) nil))))
+
 (defun neoment-events--handle-canonical-alias (room event)
   "Handle the `m.room.canonical_alias' EVENT of ROOM."
   (let* ((content (alist-get 'content event))
-         (aliases (delq nil (cons (alist-get 'alias content)
-                                  (copy-sequence (alist-get 'alt_aliases content)))))
+         (aliases (neoment-events--aliases content))
          (sender (neoment-display-name (alist-get 'sender event))))
     (setf (neoment-room-aliases room) aliases)
     (neoment-room-add-message
@@ -575,12 +581,12 @@ room changed."
   (let ((content (alist-get 'content event)))
     (pcase (alist-get 'type event)
       ("m.room.name"
-       (when (stringp (alist-get 'name content))
-         (setf (neoment-invited-room-name room) (alist-get 'name content)))
+       (let ((name (alist-get 'name content)))
+         (when (and (stringp name) (not (string-empty-p name)))
+           (setf (neoment-invited-room-name room) name)))
        t)
       ("m.room.canonical_alias"
-       (let ((alias (or (alist-get 'alias content)
-                        (car (alist-get 'alt_aliases content)))))
+       (let ((alias (car (neoment-events--aliases content))))
          (when alias (setf (neoment-invited-room-name room) alias)))
        t)
       ("m.room.topic"

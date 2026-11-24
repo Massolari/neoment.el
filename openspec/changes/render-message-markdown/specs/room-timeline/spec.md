@@ -17,10 +17,6 @@ In message bodies and reply quotes, `**x**` and `__x__` SHALL use `neoment-bold`
 - **WHEN** the body is `snake_case_name`
 - **THEN** no part of it has the face `neoment-italic`
 
-#### Scenario: Mention with underscores
-- **WHEN** the body is a mention link `[Foo](https://matrix.to/#/@foo_bar_baz:s)`
-- **THEN** the link keeps its mention face and no part of the URL is italic
-
 #### Scenario: Lone asterisk
 - **WHEN** the body is `2 * 3 * 4`
 - **THEN** no part of it has the face `neoment-italic`
@@ -29,26 +25,52 @@ In message bodies and reply quotes, `**x**` and `__x__` SHALL use `neoment-bold`
 - **WHEN** the body is `~~old~~ new`
 - **THEN** `old` has the face `neoment-strike`
 
-### Requirement: Code in message bodies
-Inline `` `x` `` SHALL use `neoment-code`. Lines between an opening ```` ```[lang] ```` line and the next ```` ``` ```` line SHALL use `neoment-code`, with no other markdown styling inside them. The fence lines themselves SHALL stay visible in `neoment-markup`.
+### Requirement: Inline code in message bodies
+Inline `` `x` `` SHALL use `neoment-code`, with no other markdown styling inside it.
 
 #### Scenario: Inline code keeps asterisks
 - **WHEN** the body is `` run `a**b**c` ``
 - **THEN** `a**b**c` has the face `neoment-code` and none of it has the face `neoment-bold`
 
-#### Scenario: Code block
-- **WHEN** the body is ```` ```elisp ````, `(+ 1 *x*)`, ```` ``` ```` on three lines
-- **THEN** the middle line has the face `neoment-code` and no italic, and both fence lines are visible in the face `neoment-markup`
+### Requirement: Code blocks in message bodies
+Lines between an opening ```` ```[lang] ```` line and the next ```` ``` ```` line (or the end of the body) SHALL be highlighted like the major mode for `lang` when that mode is available, and SHALL use `neoment-code` otherwise. No markdown styling SHALL apply inside them. The language name on the opening fence SHALL use `neoment-markup`.
+
+#### Scenario: Known language
+- **WHEN** the body is ```` ```elisp ````, `(defun f () "doc")`, ```` ``` ```` on three lines
+- **THEN** `defun` has the keyword face `emacs-lisp-mode` gives it and `"doc"` has a string face
+
+#### Scenario: Unknown or missing language
+- **WHEN** the body is ```` ``` ````, `a *b* c`, ```` ``` ```` on three lines
+- **THEN** `a *b* c` has the face `neoment-code` and no part of it is italic
 
 ### Requirement: Headings in message bodies
-A body line starting with `# `, `## ` or `### ` SHALL use `neoment-heading` for the rest of the line.
+A body line starting with `# `, `## ` or `### ` SHALL use `neoment-heading` for the whole line, marker included. The marker is never hidden.
 
 #### Scenario: Second-level heading
 - **WHEN** the body is `## Notes`
-- **THEN** `Notes` has the face `neoment-heading`
+- **THEN** the line shows `## Notes` with the face `neoment-heading`
+
+### Requirement: Links in message bodies
+For a `[text](url)` link outside code, `text` SHALL be the visible part, `url` SHALL be shown as its tooltip, and `text` SHALL use `neoment-link` unless a mention or emoticon face applies. A spoiler `[Spoiler…](content)` SHALL show only `Spoiler…`, with no tooltip.
+
+#### Scenario: Mention shows the name
+- **WHEN** a message mentions `[Alice](https://matrix.to/#/@alice:s)` with the default settings
+- **THEN** the buffer shows `Alice` in `neoment-mention` and no part of the URL is visible
+
+#### Scenario: Mention with underscores
+- **WHEN** the body is `[Foo](https://matrix.to/#/@foo_bar_baz:s)`
+- **THEN** no part of the URL has the face `neoment-italic`
+
+#### Scenario: Spoiler hidden
+- **WHEN** the body is `[Spoiler](<the end>)` with the default settings
+- **THEN** the buffer shows `Spoiler` and `the end` is not visible
+
+#### Scenario: Plain link
+- **WHEN** the body is `see [docs](https://example.org)`
+- **THEN** the buffer shows `see docs`, `docs` in `neoment-link`, with the tooltip `https://example.org`
 
 ### Requirement: Hidden markup characters
-When `neoment-room-hide-markup` is non-nil (the default), the emphasis markers, the inline-code backticks and the heading `#` prefix with its space SHALL be invisible in room and thread buffers. When it is nil, they SHALL be visible in `neoment-markup`. Fence lines are never hidden.
+When `neoment-room-hide-markup` is non-nil (the default), these SHALL be invisible in room and thread buffers: emphasis markers, inline-code backticks, fence backticks, and a link's `[`, `]` and `(url)`. When it is nil, they SHALL be visible in `neoment-markup`. Re-rendering the buffer (`g`) SHALL apply a changed value.
 
 #### Scenario: Default display
 - **WHEN** Alice sends `**this**` at 09:12:44 with the default settings
@@ -58,9 +80,17 @@ When `neoment-room-hide-markup` is non-nil (the default), the emphasis markers, 
 - **WHEN** `neoment-room-hide-markup` is nil and the body is `**this**`
 - **THEN** the line shows `**this**`, the asterisks in `neoment-markup` and `this` in bold
 
+#### Scenario: Code fence display
+- **WHEN** a code block opens with ```` ```elisp ```` with the default settings
+- **THEN** the opening fence line shows only `elisp` and the closing fence line shows no text after the gutter
+
 ### Requirement: Copy keeps markdown
-Copying styled message text MUST include the markdown markers, hidden or not, so the copied text is the message's markdown.
+Copying styled message text MUST include all markdown, hidden or not, so the copied text is the message's markdown.
 
 #### Scenario: Copy a bold message
 - **WHEN** the user copies the line showing a bold `this` sent as `**this**`
 - **THEN** the kill ring receives `**this**`
+
+#### Scenario: Copy a mention
+- **WHEN** the user copies a line showing the mention `Alice`
+- **THEN** the kill ring receives `[Alice](https://matrix.to/#/@alice:s)`

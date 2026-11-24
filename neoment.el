@@ -46,6 +46,7 @@
 (require 'neoment-compose)
 (require 'neoment-emoji)
 (require 'neoment-media)
+(require 'neoment-player)
 (require 'neoment-space)
 (require 'neoment-room-info)
 (require 'neoment-notification-settings)

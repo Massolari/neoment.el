@@ -315,15 +315,14 @@ Show LIMIT-MESSAGE when the size cannot change."
 (declare-function w32-shell-execute "w32fns.c")
 
 (defun neoment-media-default-open-handler (path attachment)
-  "Open PATH for ATTACHMENT: audio plays in `mpv', the rest in the system program."
-  (if (and (eq (plist-get attachment :type) 'audio) (executable-find "mpv"))
-      (let ((buffer (get-buffer-create "*neoment-mpv*")))
-        (with-current-buffer buffer
-          (let ((inhibit-read-only t)) (erase-buffer)))
-        (make-process :name "neoment-mpv" :buffer buffer
-                      :command (list "mpv" "--no-video" path)
-                      :noquery t)
-        (display-buffer buffer '((display-buffer-below-selected) (window-height . 3))))
+  "Open PATH for ATTACHMENT: audio in the player, the rest in the system program.
+Audio uses the `mpv' based player unless `mpv' is missing or the
+platform cannot reach its control channel (Windows)."
+  (if (and (eq (plist-get attachment :type) 'audio)
+           (not (eq system-type 'windows-nt))
+           (executable-find "mpv"))
+      (progn (require 'neoment-player)
+             (neoment-player-play path))
     (neoment-media--system-open path)))
 
 (defun neoment-media--call-handler (path attachment)

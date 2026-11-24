@@ -368,7 +368,7 @@ HTTP requests are answered by `neoment-actions-test--http'."
                    ("V" . neoment-room-show-event) ("P" . neoment-room-load-previous)
                    ("L" . neoment-room-leave) ("o" . neoment-room-open-attachment)
                    ("s" . neoment-room-save-attachment) ("u" . neoment-room-upload)
-                   ("U" . neoment-room-upload-clipboard-image) ("z" . neoment-room-toggle-image-zoom)
+                   ("U" . neoment-room-upload-clipboard-image) ("z" . neoment-room-toggle-image-zoom) ("O" . neoment-player-menu)
                    ("i" . neoment-room-show-info) ("N" . neoment-room-notification-settings)
                    ("f" . neoment-pick-room) ("F" . neoment-pick-open-room)
                    ("l" . neoment-toggle-rooms-list) ("q" . neoment-room-quit)

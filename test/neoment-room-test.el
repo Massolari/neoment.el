@@ -577,6 +577,8 @@
                    "*neoment-thread: Alice in dev*"))
     (should (equal (neoment-room-thread-buffer-name "!r:s" nil)
                    "*neoment-thread: unknown author in dev*"))
+    (should (equal (neoment-room-thread-buffer-name "!r:s" "")
+                   "*neoment-thread: unknown author in dev*"))
     (let ((buffer (generate-new-buffer "x")))
       (neoment-room--setup-buffer buffer "!r:s")
       (with-current-buffer buffer

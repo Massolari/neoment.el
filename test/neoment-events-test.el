@@ -146,7 +146,17 @@
       (should (equal (neoment-invited-room-name invited) "!i:s"))
       (neoment-events-handle-invited
        invited (neoment-test-event "m.room.name" :content '((name . "inv"))))
-      (should (equal (neoment-invited-room-name invited) "inv")))))
+      (should (equal (neoment-invited-room-name invited) "inv"))))
+  (neoment-events-test
+    (let ((invited (neoment-get-invited-room "!j:s")))
+      (neoment-events-handle-invited
+       invited (neoment-test-event "m.room.canonical_alias"
+                                   :content '((alias . "") (alt_aliases . ["#alt:s"]))))
+      (should (equal (neoment-invited-room-name invited) "#alt:s")))
+    (neoment-events-handle
+     room (neoment-test-event "m.room.canonical_alias" :content '((alias . ""))))
+    (should-not (neoment-room-aliases room))
+    (should (equal (neoment-room-name room) (neoment-room-id room)))))
 
 (ert-deftest neoment-events-account-data-and-state ()
   (neoment-events-test

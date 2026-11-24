@@ -774,7 +774,8 @@ the default size.")
 (defun neoment-room-thread-buffer-name (room-id author)
   "Return the buffer name of a thread in ROOM-ID started by AUTHOR.
 AUTHOR is nil when the thread root is not loaded yet."
-  (format "*neoment-thread: %s in %s*" (or author "unknown author")
+  (format "*neoment-thread: %s in %s*"
+          (if (or (null author) (string-empty-p author)) "unknown author" author)
           (neoment-room-display-name room-id)))
 
 (defun neoment-room-buffers (room-id)

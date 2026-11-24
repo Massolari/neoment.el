@@ -94,6 +94,46 @@ reused and concurrent downloads of the same file are merged."
 (defvar-local neoment-media--render-tick 0
   "Counter bumped by each render, so late images are dropped.")
 
+(defconst neoment-media-image-default-height 0.2
+  "Default max height of an inline image, as a fraction of the window.")
+
+(defconst neoment-media--min-height 0.05
+  "Smallest max height of an inline image, as a fraction of the window.")
+
+(defconst neoment-media--max-height 1.0
+  "Largest max height of an inline image, as a fraction of the window.")
+
+(defconst neoment-media--resize-step 1.25
+  "Factor applied by each image resize.")
+
+(defconst neoment-media--image-help "z: zoom, +/-: resize, o: open"
+  "Help shown when hovering an inline image.")
+
+(defvar-keymap neoment-media-image-map
+  :doc "Keymap active with the cursor on an inline image.
+Other keys fall through to `neoment-room-mode-map'."
+  "z" #'neoment-room-toggle-image-zoom
+  "+" #'neoment-room-image-enlarge
+  "-" #'neoment-room-image-shrink
+  "o" #'neoment-room-image-open)
+
+(defun neoment-media--image-fraction (key)
+  "Return the max height of KEY's inline image, as a fraction of the window."
+  (or (alist-get key neoment-room--image-heights nil nil #'equal)
+      neoment-media-image-default-height))
+
+(defun neoment-media--set-image-fraction (key fraction)
+  "Set the max height of KEY's inline image to FRACTION of the window.
+FRACTION is clamped to the allowed range; nil (or the default) removes
+the entry.  Return the fraction now in effect."
+  (let ((value (and fraction
+                    (min neoment-media--max-height
+                         (max neoment-media--min-height fraction)))))
+    (when (and value (< (abs (- value neoment-media-image-default-height)) 1e-9))
+      (setq value nil))
+    (setf (alist-get key neoment-room--image-heights nil t #'equal) value)
+    (neoment-media--image-fraction key)))
+
 (defun neoment-media--image-attachment (message)
   "Return the image (or video thumbnail) attachment of MESSAGE, or nil."
   (let ((attachment (neoment-message-attachment message)))
@@ -101,81 +141,166 @@ reused and concurrent downloads of the same file are merged."
       ('image attachment)
       ((or 'video 'location) (plist-get attachment :thumbnail)))))
 
-(defun neoment-media-image-size (window image-width image-height zoom)
+(defun neoment-media-image-size (window image-width image-height fraction)
   "Return (MAX-WIDTH . MAX-HEIGHT) in pixels for an image in WINDOW.
-IMAGE-WIDTH and IMAGE-HEIGHT are the real size, when known.  ZOOM
-allows the full window height instead of 20%."
+IMAGE-WIDTH and IMAGE-HEIGHT are the real size, when known.  FRACTION
+is the max height as a fraction of the window height."
   (let* ((char (frame-char-width (window-frame window)))
          (max-w (* char (max 1 (- (window-width window) neoment-room-header-width 4))))
-         (max-h (* (if zoom 1.0 0.2) (window-pixel-height window))))
+         (max-h (* fraction (window-pixel-height window))))
     (cons (truncate (if image-width (min image-width max-w) max-w))
           (truncate (if image-height (min image-height max-h) max-h)))))
 
-(defun neoment-media--place-image (buffer tick pos file key)
-  "Show the image FILE after the line at POS in BUFFER for message KEY.
-Nothing happens when BUFFER was re-rendered since TICK."
-  (when (and (buffer-live-p buffer)
-             (= tick (buffer-local-value 'neoment-media--render-tick buffer)))
-    (with-current-buffer buffer
-      (let* ((window (get-buffer-window buffer))
-             (message (neoment-room-get-message (neoment-get-room neoment--room-id) key))
-             (attachment (and message (neoment-media--image-attachment message)))
-             (size (and window (neoment-media-image-size
-                                window (plist-get attachment :width)
-                                (plist-get attachment :height)
-                                (member key neoment-room--zoomed))))
-             (image (and size (ignore-errors
-                                (create-image file nil nil :max-width (car size)
-                                              :max-height (cdr size))))))
-        (when image
-          (save-excursion
-            (goto-char pos)
-            (let ((ov (make-overlay (line-end-position) (line-end-position))))
-              (overlay-put ov 'neoment-image key)
-              (overlay-put ov 'after-string
-                           (concat "\n" (make-string neoment-room-header-width ?\s)
-                                   (propertize " " 'display image))))))))))
+(defun neoment-media--image-window (buffer)
+  "Return the window to size BUFFER's inline images for, or nil.
+A window on a graphical frame is preferred, from any frame."
+  (or (seq-find (lambda (w) (display-graphic-p (window-frame w)))
+                (get-buffer-window-list buffer nil t))
+      (get-buffer-window buffer t)))
+
+(defun neoment-media--create-image (file key window)
+  "Return the image of FILE for message KEY sized for WINDOW, or nil."
+  (let* ((message (neoment-room-get-message (neoment-get-room neoment--room-id) key))
+         (attachment (and message (neoment-media--image-attachment message)))
+         (size (and window (neoment-media-image-size
+                            window (plist-get attachment :width)
+                            (plist-get attachment :height)
+                            (neoment-media--image-fraction key)))))
+    (and size (ignore-errors
+                (create-image file nil nil :max-width (car size)
+                              :max-height (cdr size))))))
+
+(defun neoment-media--image-text (image file key)
+  "Return the image line text showing IMAGE (from FILE) for message KEY."
+  (let* ((line (concat (make-string neoment-room-header-width ?\s)
+                       (propertize " " 'display image 'neoment-image-file file
+                                   'help-echo neoment-media--image-help)))
+         (text (progn
+                 (add-text-properties 0 (length line)
+                                      (list 'keymap neoment-media-image-map) line)
+                 (concat "\n" line))))
+    (add-text-properties 0 (length text)
+                         (list 'neoment-message key 'neoment-decoration t
+                               'neoment-image key)
+                         text)
+    text))
+
+(defun neoment-media--place-image (buffer tick marker file key)
+  "Show the image FILE on a line below the header at MARKER in BUFFER.
+KEY is the message.  Nothing happens when BUFFER was re-rendered since
+TICK.  MARKER is released."
+  (unwind-protect
+      (when (and (buffer-live-p buffer)
+                 (= tick (buffer-local-value 'neoment-media--render-tick buffer)))
+        (with-current-buffer buffer
+          (let ((image (neoment-media--create-image file key (neoment-media--image-window buffer))))
+            (when (and image (marker-position marker)
+                       (not (neoment-room--image-position key)))
+              (let ((inhibit-read-only t))
+                (save-excursion
+                  (goto-char marker)
+                  (goto-char (line-end-position))
+                  (insert (neoment-media--image-text image file key))))))))
+    (set-marker marker nil)))
+
+(defun neoment-media--remove-images ()
+  "Delete the inline image lines of the current buffer."
+  (let ((inhibit-read-only t)
+        (pos (point-min)))
+    (while (setq pos (text-property-not-all pos (point-max) 'neoment-image nil))
+      (delete-region pos (or (next-single-property-change pos 'neoment-image)
+                             (point-max))))))
 
 (defun neoment-media-add-images ()
   "Add the inline images of the current room buffer (GUI frames only)."
   (cl-incf neoment-media--render-tick)
-  (remove-overlays (point-min) (point-max) 'neoment-image)
-  (let ((window (get-buffer-window (current-buffer))))
+  (neoment-media--remove-images)
+  (let ((window (neoment-media--image-window (current-buffer))))
     (when (and window (display-graphic-p (window-frame window)) (display-images-p))
       (let ((buffer (current-buffer))
             (tick neoment-media--render-tick)
             (room (neoment-get-room neoment--room-id))
-            (pos (point-min)))
+            (pos (point-min))
+            (pending nil))
+        ;; Collect every header first: placing an image shifts the text.
         (while (setq pos (text-property-any pos (point-max) 'neoment-header t))
           (let* ((key (get-text-property pos 'neoment-message))
                  (message (and key (neoment-room-get-message room key)))
-                 (image (and message (neoment-media--image-attachment message)))
-                 (mxc (plist-get image :mxc-url))
-                 (line-start pos))
+                 (mxc (and message (plist-get (neoment-media--image-attachment message)
+                                              :mxc-url))))
             (when (neoment-events-mxc-p mxc)
+              (push (list (copy-marker pos) key mxc) pending))
+            ;; Adjacent header lines share one property run: go line by line.
+            (setq pos (save-excursion (goto-char pos) (forward-line 1) (point)))))
+        (pcase-dolist (`(,marker ,key ,mxc) (nreverse pending))
+          (condition-case err
               (neoment-media-image-file
                mxc (lambda (result)
-                     (when (plist-get result :ok)
-                       (neoment-media--place-image buffer tick line-start
-                                                   (plist-get result :ok) key)))))
-            (setq pos (or (next-single-property-change pos 'neoment-header) (point-max)))))))))
+                     (if (plist-get result :ok)
+                         (neoment-media--place-image buffer tick marker
+                                                     (plist-get result :ok) key)
+                       (set-marker marker nil))))
+            (error
+             (set-marker marker nil)
+             (message "neoment: inline image failed: %s" (error-message-string err)))))))))
 
 (setq neoment-room-image-function #'neoment-media-add-images)
 
+(defun neoment-media--refresh-image (key)
+  "Re-display KEY's inline image at its current size, without a render."
+  (let ((pos (neoment-room--image-position key)))
+    (when pos
+      (let ((image (neoment-media--create-image
+                    (get-text-property pos 'neoment-image-file) key
+                    (or (neoment-media--image-window (current-buffer)) (selected-window)))))
+        (when image
+          (with-silent-modifications
+            (put-text-property pos (1+ pos) 'display image)))))))
+
+(defun neoment-media--image-key-at-point (&optional header)
+  "Return the message key of the inline image on the current line, or nil.
+With HEADER, a message header line also gives its image."
+  (let ((bol (line-beginning-position)))
+    (or (get-text-property bol 'neoment-image)
+        (and header
+             (get-text-property bol 'neoment-header)
+             (let ((key (get-text-property bol 'neoment-message)))
+               (and key (neoment-room--image-position key) key))))))
+
 (defun neoment-room-toggle-image-zoom ()
-  "Toggle the inline image of the current line between 20% and full height."
+  "Toggle the inline image of the current line between default and full height.
+Works on the image line and on its message header line.  A resized
+image returns to the default size."
   (interactive)
-  (let* ((key (get-text-property (line-beginning-position) 'neoment-message))
-         (has-image (seq-find (lambda (ov) (equal (overlay-get ov 'neoment-image) key))
-                              (overlays-in (line-beginning-position)
-                                           (min (point-max) (1+ (line-end-position)))))))
-    (if (not (and key has-image))
+  (let ((key (neoment-media--image-key-at-point t)))
+    (if (not key)
         (neoment-notify--message "No image on this line")
-      (setq neoment-room--zoomed
-            (if (member key neoment-room--zoomed)
-                (delete key neoment-room--zoomed)
-              (cons key neoment-room--zoomed)))
-      (neoment-room-render-buffer))))
+      (neoment-media--set-image-fraction
+       key (and (= (neoment-media--image-fraction key) neoment-media-image-default-height)
+                neoment-media--max-height))
+      (neoment-media--refresh-image key))))
+
+(defun neoment-media--resize (factor limit-message)
+  "Multiply the max height of the image on this line by FACTOR.
+Show LIMIT-MESSAGE when the size cannot change."
+  (let ((key (neoment-media--image-key-at-point)))
+    (if (not key)
+        (neoment-notify--message "No image on this line")
+      (let* ((old (neoment-media--image-fraction key))
+             (new (neoment-media--set-image-fraction key (* old factor))))
+        (if (= old new)
+            (neoment-notify--message limit-message)
+          (neoment-media--refresh-image key))))))
+
+(defun neoment-room-image-enlarge ()
+  "Enlarge the inline image under the cursor one step."
+  (interactive)
+  (neoment-media--resize neoment-media--resize-step "Image is at its maximum size"))
+
+(defun neoment-room-image-shrink ()
+  "Shrink the inline image under the cursor one step."
+  (interactive)
+  (neoment-media--resize (/ 1.0 neoment-media--resize-step) "Image is at its minimum size"))
 
 ;;;; Open and save
 
@@ -263,6 +388,49 @@ Nothing happens when BUFFER was re-rendered since TICK."
                  (neoment-media--call-handler
                   (plist-get result :ok)
                   (append (list :origin 'message) attachment))))))))))))
+
+(defvar-local neoment-media--image-buffer-path nil
+  "File shown by a `neoment-media--show-image-buffer' buffer.")
+
+(defun neoment-media--show-image-buffer (path filename)
+  "Show the image file PATH in an `image-mode' buffer named after FILENAME.
+The buffer already showing PATH is reused; another image with the same
+FILENAME gets a buffer of its own.  Return the buffer."
+  (let ((buffer (seq-find (lambda (b)
+                            (equal (buffer-local-value 'neoment-media--image-buffer-path b)
+                                   path))
+                          (buffer-list))))
+    (unless buffer
+      (setq buffer (generate-new-buffer (format "*neoment-image: %s*" filename)))
+      (with-current-buffer buffer
+        (set-buffer-multibyte nil)
+        (insert-file-contents-literally path)
+        (setq default-directory (file-name-as-directory (neoment-storage-media-dir)))
+        (image-mode)
+        (setq neoment-media--image-buffer-path path)))
+    (pop-to-buffer buffer)
+    buffer))
+
+(defun neoment-room-image-open ()
+  "Open the full image under the cursor in an `image-mode' buffer.
+Video and location thumbnails are opened as attachments instead."
+  (interactive)
+  (let* ((message (neoment-room-message-at-point))
+         (attachment (and message (neoment-message-attachment message))))
+    (cond
+     ((null message))
+     ((not (eq (plist-get attachment :type) 'image))
+      (neoment-room-open-attachment))
+     (t
+      (let ((filename (or (plist-get attachment :filename) "image")))
+        (neoment-media-download
+         (plist-get attachment :mxc-url) (neoment-media--attachment-file-name message)
+         (lambda (result)
+           (if (plist-get result :error)
+               (neoment-notify--error
+                (concat "Error fetching attachment: "
+                        (neoment-http-error-message (plist-get result :error))))
+             (neoment-media--show-image-buffer (plist-get result :ok) filename)))))))))
 
 (defun neoment-media-free-name (path)
   "Return PATH, or the first free \"name(N).ext\" next to it."

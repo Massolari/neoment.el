@@ -21,7 +21,7 @@
 
 ## 5. Integration checks
 
-- [x] 5.1 Run `grep -rn 'neoment://' --include='*.el' --include='*.md' . ':!openspec/changes'` and confirm that no matches remain outside archived changes.
+- [x] 5.1 Run `git grep -n 'neoment://' -- ':!openspec'` and confirm that no matches remain outside `openspec/` (the main specs under `openspec/specs/` are updated from the delta specs on archive).
 - [x] 5.2 Run `make compile lint test` and confirm that all three pass with no byte-compile warnings.
 
 ## Workflow follow-up

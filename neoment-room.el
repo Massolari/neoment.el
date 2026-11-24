@@ -43,6 +43,8 @@
 (require 'neoment-rooms)
 (require 'neoment-player)
 
+(declare-function neoment-room-open-attachment "neoment-media")
+
 (defconst neoment-room-name-width 19
   "Width of the sender name in the gutter.")
 
@@ -199,31 +201,375 @@ CAPTION is nil when there is none."
                         'neoment-attachment t)
             (and caption (not (string-empty-p caption)) caption)))))
 
-(defconst neoment-room--link-regexp "\\[\\([^]\n]*\\)\\](\\([^)[:space:]]+\\))"
-  "Regexp matching a markdown link.")
+;;;; Markdown styling
+
+(defconst neoment-room--link-regexp
+  (concat "\\[\\([^]\n]*\\)\\]("
+          "\\(<\\(?:[^<>\\\n]\\|\\\\[^\n]\\)*>"
+          "\\|\\(?:[^() \t\n]\\|([^() \t\n]*)\\)+\\)"
+          ")")
+  "Regexp matching a markdown link.
+Group 1 is the text, group 2 the destination: either within `<…>', with
+backslash escapes, or bare with at most one level of balanced parentheses.")
+
+(defconst neoment-room--spoiler-text-regexp "\\`Spoiler\\(?: for .*\\)?\\'"
+  "Regexp matching the text of a spoiler link.")
+
+(defun neoment-room--link-destination (raw)
+  "Return the URL of the markdown link destination RAW.
+A destination within `<…>' has the escapes `\\\\', `\\<' and `\\>'
+undone, and `\\n' becomes a newline."
+  (if (and (string-prefix-p "<" raw) (string-suffix-p ">" raw) (> (length raw) 1))
+      (replace-regexp-in-string
+       "\\\\\\([\\<>n]\\)"
+       (lambda (m) (if (equal (match-string 1 m) "n") "\n" (match-string 1 m)))
+       (substring raw 1 -1) t t)
+    raw))
+
+(defconst neoment-room--fence-regexp "^\\(```\\)[ \t]*\\([^`\n]*?\\)[ \t]*$"
+  "Regexp matching the opening line of a fenced code block.")
+
+(defconst neoment-room--fence-close-regexp "^\\(```\\)[ \t]*$"
+  "Regexp matching the closing line of a fenced code block.")
+
+(defconst neoment-room--inline-code-regexp
+  "\\(`+\\)\\([^`\n]\\|[^`\n][^\n]*?[^`\n]\\)\\(\\1\\)\\(?:[^`]\\|\\'\\)"
+  "Regexp matching inline code.
+Group 1 is the opening run, group 2 the code and group 3 the closing
+run, which must not be followed by another backtick.")
+
+(defun neoment-room--emphasis-rule (marker exclude face intraword)
+  "Return an emphasis rule as (OPEN-REGEXP CLOSE-REGEXP FACE).
+MARKER is the marker text.  The emphasized text can't start or end with
+whitespace or a character of EXCLUDE.  Unless INTRAWORD, the markers
+can't touch a word character on their outer side."
+  (let ((q (regexp-quote marker))
+        (edge (format "[^%s \t\n]" exclude)))
+    (list (concat (if intraword "" "\\(?:^\\|[^[:alnum:]_]\\)") "\\(" q "\\)" edge)
+          (concat edge "\\(" q "\\)" (if intraword "" "\\(?:$\\|[^[:alnum:]_]\\)"))
+          face)))
+
+(defconst neoment-room--emphasis-rules
+  (list (neoment-room--emphasis-rule "**" "" 'neoment-bold t)
+        (neoment-room--emphasis-rule "__" "" 'neoment-bold nil)
+        (neoment-room--emphasis-rule "~~" "" 'neoment-strike t)
+        (neoment-room--emphasis-rule "*" "*" 'neoment-italic t)
+        (neoment-room--emphasis-rule "_" "_" 'neoment-italic nil))
+  "Emphasis rules as (OPEN-REGEXP CLOSE-REGEXP FACE), longest marker first.
+Group 1 of each regexp is the marker.")
+
+(defvar warning-minimum-level)
+(defvar warning-minimum-log-level)
+
+(defvar neoment-room-code-language-modes
+  '(("elisp" . emacs-lisp-mode) ("emacs-lisp" . emacs-lisp-mode) ("el" . emacs-lisp-mode)
+    ("lisp" . lisp-mode) ("scheme" . scheme-mode)
+    ("js" . js-mode) ("javascript" . js-mode) ("jsx" . js-mode) ("json" . js-json-mode)
+    ("ts" . typescript-ts-mode) ("typescript" . typescript-ts-mode)
+    ("tsx" . tsx-ts-mode)
+    ("sh" . sh-mode) ("bash" . sh-mode) ("shell" . sh-mode) ("zsh" . sh-mode)
+    ("console" . sh-mode)
+    ("py" . python-mode) ("python" . python-mode) ("rb" . ruby-mode) ("ruby" . ruby-mode)
+    ("c" . c-mode) ("cpp" . c++-mode) ("c++" . c++-mode) ("h" . c-mode)
+    ("java" . java-mode) ("cs" . csharp-mode) ("csharp" . csharp-mode)
+    ("go" . go-mode) ("rs" . rust-mode) ("rust" . rust-mode) ("lua" . lua-mode)
+    ("html" . mhtml-mode) ("xml" . nxml-mode) ("css" . css-mode) ("scss" . scss-mode)
+    ("sql" . sql-mode) ("tex" . latex-mode) ("latex" . latex-mode)
+    ("md" . markdown-mode) ("markdown" . markdown-mode)
+    ("yml" . yaml-mode) ("yaml" . yaml-mode) ("toml" . conf-toml-mode)
+    ("ini" . conf-mode) ("diff" . diff-mode) ("patch" . diff-mode)
+    ("make" . makefile-mode) ("makefile" . makefile-mode)
+    ("hs" . haskell-mode) ("ex" . elixir-mode) ("elixir" . elixir-mode)
+    ("clj" . clojure-mode) ("clojure" . clojure-mode) ("nix" . nix-mode)
+    ("kt" . kotlin-mode) ("kotlin" . kotlin-mode) ("swift" . swift-mode)
+    ("php" . php-mode) ("perl" . perl-mode) ("pl" . perl-mode) ("ocaml" . tuareg-mode)
+    ("zig" . zig-mode))
+  "Alist from code block language names to major modes.
+A language not listed uses `<language>-mode' when that is a major mode
+named in `auto-mode-alist'.  Modes that are not defined are ignored.")
+
+(defvar neoment-room--code-cache (make-hash-table :test #'equal)
+  "Cache of code fontification, from (MODE . CODE) to face runs or :none.")
+
+(defconst neoment-room--code-cache-size 256
+  "Number of entries after which the code fontification cache is cleared.")
+
+(defconst neoment-room--code-buffer " *neoment-code*"
+  "Hidden buffer used to fontify code blocks.")
+
+(defun neoment-room--code-mode (lang)
+  "Return the major mode for the code block language LANG, or nil.
+Only modes in `neoment-room-code-language-modes' or `auto-mode-alist'
+are used, so a message can't run an arbitrary command."
+  (unless (string-empty-p lang)
+    (let ((mode (or (cdr (assoc-string lang neoment-room-code-language-modes t))
+                    (let ((candidate (intern-soft (concat (downcase lang) "-mode"))))
+                      (and candidate
+                           (seq-some (lambda (entry)
+                                       (eq (if (consp (cdr entry)) (cadr entry) (cdr entry))
+                                           candidate))
+                                     auto-mode-alist)
+                           candidate)))))
+      (and mode (fboundp mode) mode))))
+
+(defun neoment-room--face-runs ()
+  "Return the (START END FACE) runs of the current buffer, 0-based."
+  (let ((pos (point-min))
+        (runs nil))
+    (while (< pos (point-max))
+      (let ((next (next-property-change pos nil (point-max)))
+            (face (or (get-text-property pos 'face)
+                      (get-text-property pos 'font-lock-face))))
+        (when face
+          (push (list (- pos (point-min)) (- next (point-min)) face) runs))
+        (setq pos next)))
+    (nreverse runs)))
+
+(defun neoment-room--fontify-code (mode code)
+  "Return the face runs of CODE highlighted by MODE, or nil.
+Runs are (START END FACE) with 0-based offsets.  Results are cached;
+nil means MODE gave no faces or failed."
+  (let* ((key (cons mode code))
+         (cached (gethash key neoment-room--code-cache)))
+    (unless cached
+      (setq cached
+            (or (condition-case nil
+                    (let ((inhibit-message t)
+                          (warning-minimum-level :emergency)
+                          (warning-minimum-log-level :emergency))
+                      (with-current-buffer (get-buffer-create neoment-room--code-buffer)
+                        (let ((inhibit-read-only t))
+                          (erase-buffer)
+                          (unless (eq major-mode mode)
+                            (delay-mode-hooks (funcall mode)))
+                          (insert code)
+                          (font-lock-ensure)
+                          (neoment-room--face-runs))))
+                  (error nil))
+                :none))
+      (when (>= (hash-table-count neoment-room--code-cache) neoment-room--code-cache-size)
+        (clrhash neoment-room--code-cache))
+      (puthash key cached neoment-room--code-cache))
+    (and (listp cached) cached)))
+
+(defun neoment-room--add-faces (start end face string)
+  "Add FACE, a face or list of faces, between START and END of STRING."
+  (dolist (f (reverse (if (and (consp face) (not (keywordp (car face)))) face (list face))))
+    (add-face-text-property start end f nil string)))
+
+(defun neoment-room--markup (start end string)
+  "Make the markup between START and END of STRING hideable and protected."
+  (when (< start end)
+    (add-face-text-property start end 'neoment-markup nil string)
+    (add-text-properties start end '(invisible neoment-markup neoment--protected t) string)))
+
+(defun neoment-room--protected-p (start end string)
+  "Return non-nil when STRING has protected text between START and END."
+  (and (< start end) (text-property-not-all start end 'neoment--protected nil string)))
+
+(defun neoment-room--style-code-block (start end lang string)
+  "Highlight the code between START and END of STRING as language LANG."
+  (when (< start end)
+    (let* ((mode (neoment-room--code-mode lang))
+           (runs (and mode (neoment-room--fontify-code
+                            mode (substring-no-properties string start end)))))
+      (if runs
+          (pcase-dolist (`(,b ,e ,face) runs)
+            (neoment-room--add-faces (+ start b) (+ start e) face string))
+        (add-face-text-property start end 'neoment-code nil string)))))
+
+(defun neoment-room--style-fences (string)
+  "Style the fenced code blocks of STRING."
+  (let ((pos 0))
+    (while (string-match neoment-room--fence-regexp string pos)
+      (let* ((open-beg (match-beginning 0))
+             (ticks-end (match-end 1))
+             (info-beg (match-beginning 2))
+             (info-end (match-end 2))
+             (code-beg (min (length string) (1+ (match-end 0))))
+             (lang (car (save-match-data (split-string (match-string 2 string)))))
+             (close (and (< code-beg (length string))
+                         (string-match neoment-room--fence-close-regexp string code-beg)
+                         (cons (match-beginning 1) (match-end 1))))
+             (code-end (if close (max code-beg (1- (car close))) (length string)))
+             (block-end (if close (cdr close) (length string))))
+        (neoment-room--markup open-beg ticks-end string)
+        (when (< info-beg info-end)
+          (add-face-text-property info-beg info-end 'neoment-markup nil string))
+        (neoment-room--style-code-block code-beg code-end (or lang "") string)
+        (when close
+          (neoment-room--markup (car close) (cdr close) string))
+        (put-text-property open-beg block-end 'neoment--protected t string)
+        (setq pos (max block-end (1+ open-beg)))))))
+
+(defun neoment-room--style-inline-code (string)
+  "Style the inline code of STRING."
+  (let ((pos 0))
+    (while (string-match neoment-room--inline-code-regexp string pos)
+      (let ((mb (match-beginning 0)) (me (match-end 3))
+            (cb (match-beginning 2)) (ce (match-end 2)))
+        (if (neoment-room--protected-p mb me string)
+            (setq pos (1+ mb))
+          (add-face-text-property cb ce 'neoment-code nil string)
+          (neoment-room--markup mb cb string)
+          (neoment-room--markup ce me string)
+          (put-text-property mb me 'neoment--protected t string)
+          (setq pos me))))))
+
+(defun neoment-room-open-link-at-mouse (event)
+  "Open the link, attachment or emoticon clicked with EVENT."
+  (interactive "e")
+  (mouse-set-point event)
+  (neoment-room-open-attachment))
+
+(defvar-keymap neoment-room-link-map
+  :doc "Keymap on link text in room buffers."
+  "<mouse-1>" #'neoment-room-open-link-at-mouse)
+
+(defun neoment-room--style-links (string &optional spoilers-only)
+  "Style the markdown links of STRING.
+With SPOILERS-ONLY, style only the spoilers made by the converter, whose
+destination is within `<…>'; this runs before inline code so that
+backticks in a spoiler can't expose it."
+  (let ((pos 0)
+        (user (neoment-user-id)))
+    (while (string-match neoment-room--link-regexp string pos)
+      (let* ((mb (match-beginning 0)) (me (match-end 0))
+             (tb (match-beginning 1)) (te (match-end 1))
+             (text (match-string-no-properties 1 string))
+             (raw (match-string-no-properties 2 string))
+             (url (neoment-room--link-destination raw)))
+        ;; Only the delimiters must be unclaimed: code inside the
+        ;; destination, as in a spoiler, doesn't prevent the link.
+        (if (or (and spoilers-only
+                     (not (and (string-prefix-p "<" raw)
+                               (string-match-p neoment-room--spoiler-text-regexp text))))
+                (neoment-room--protected-p mb tb string)
+                (neoment-room--protected-p te (+ te 2) string)
+                (neoment-room--protected-p (1- me) me string))
+            (setq pos (1+ mb))
+          (let ((spoiler (string-match-p neoment-room--spoiler-text-regexp text))
+                (face (cond
+                       ((string-match-p "\\`https://matrix\\.to/#/@[^[:space:]]+:[^[:space:]]+\\'"
+                                        url)
+                        (if (and user (string-search user url))
+                            'neoment-mention-user
+                          'neoment-mention))
+                       ((and (string-prefix-p "img:" text) (neoment-events-mxc-p url))
+                        (put-text-property mb me 'neoment-emoticon
+                                           (list :title (string-trim (substring text 4))
+                                                 :url url)
+                                           string)
+                        'neoment-emoticon)
+                       (t 'neoment-link))))
+            (add-face-text-property tb te face nil string)
+            (add-text-properties mb me (list 'neoment-link url 'keymap neoment-room-link-map)
+                                 string)
+            (put-text-property tb te 'mouse-face 'highlight string)
+            (put-text-property mb me (if spoiler 'neoment-spoiler 'help-echo)
+                               (if spoiler t url) string)
+            (neoment-room--markup mb tb string)
+            (neoment-room--markup te me string)
+            (setq pos me)))))))
+
+(defun neoment-room--style-headings (string)
+  "Style the heading lines of STRING."
+  (let ((pos 0))
+    (while (string-match "^#\\{1,3\\} .*$" string pos)
+      (let ((mb (match-beginning 0)) (me (match-end 0)))
+        (unless (neoment-room--protected-p mb (1+ mb) string)
+          (add-face-text-property mb me 'neoment-heading nil string))
+        (setq pos (max me (1+ mb)))))))
+
+(defun neoment-room--emphasis-closer (close-regexp string from)
+  "Return (START . END) of the first free CLOSE-REGEXP in STRING after FROM.
+Only the line of FROM is searched, and closers that are protected, such
+as the markers of an inner emphasis, are skipped."
+  (let ((line-end (or (string-search "\n" string from) (length string)))
+        (pos from)
+        (found nil))
+    (while (and (not found)
+                (string-match close-regexp string pos)
+                (<= (match-end 1) line-end))
+      (let ((cb (match-beginning 1)) (ce (match-end 1)))
+        (if (neoment-room--protected-p cb ce string)
+            (setq pos cb)
+          (setq found (cons cb ce)))))
+    found))
+
+(defun neoment-room--style-emphasis (string)
+  "Style the emphasis of STRING.
+An emphasis can contain another one, as in \"*a **b** c*\"."
+  (pcase-dolist (`(,open-regexp ,close-regexp ,face) neoment-room--emphasis-rules)
+    (let ((pos 0))
+      (while (and (< pos (length string)) (string-match open-regexp string pos))
+        (let* ((ob (match-beginning 1)) (oe (match-end 1))
+               (close (and (not (neoment-room--protected-p ob oe string))
+                           (neoment-room--emphasis-closer close-regexp string oe))))
+          ;; In "**a *b***" the bold takes the last two stars of the run,
+          ;; leaving the first to close the inner italic.
+          (when (and close
+                     (= (- oe ob) 2)
+                     (< (cdr close) (length string))
+                     (eq (aref string (cdr close)) (aref string ob))
+                     (string-search (string (aref string ob))
+                                    (substring string oe (car close)))
+                     (not (neoment-room--protected-p (cdr close) (1+ (cdr close)) string)))
+            (setq close (cons (1+ (car close)) (1+ (cdr close)))))
+          (if (not close)
+              (setq pos (1+ ob))
+            (add-face-text-property oe (car close) face nil string)
+            (neoment-room--markup ob oe string)
+            (neoment-room--markup (car close) (cdr close) string)
+            (setq pos (cdr close))))))))
+
+(defvar neoment-room--style-cache (make-hash-table :test #'equal)
+  "Cache of styled bodies, from (USER-ID . BODY) to the styled string.")
+
+(defconst neoment-room--style-cache-size 1024
+  "Number of entries after which the styled body cache is cleared.")
+
+(defun neoment-room--clear-style-caches (&rest _)
+  "Clear the styled body and code caches.
+Called when the language modes may have changed."
+  (clrhash neoment-room--style-cache)
+  (clrhash neoment-room--code-cache))
+
+(add-variable-watcher 'neoment-room-code-language-modes #'neoment-room--clear-style-caches)
+
+(defun neoment-room--clear-style-cache-after-load (&rest _)
+  "Clear the styled body cache, as a loaded file may define a language mode."
+  (clrhash neoment-room--style-cache))
+
+(add-hook 'after-load-functions #'neoment-room--clear-style-cache-after-load)
+
+(defun neoment-room--style-body (body)
+  "Return the markdown BODY with faces, and its markup made hideable.
+Markers stay in the text with the `invisible' property
+`neoment-markup', so copying keeps the markdown.  Results are cached,
+since every render restyles every message."
+  (let* ((key (cons (neoment-user-id) (substring-no-properties body)))
+         (cached (gethash key neoment-room--style-cache)))
+    (unless cached
+      (setq cached (copy-sequence body))
+      (neoment-room--style-fences cached)
+      (neoment-room--style-links cached t)
+      (neoment-room--style-inline-code cached)
+      (neoment-room--style-links cached)
+      (neoment-room--style-headings cached)
+      (neoment-room--style-emphasis cached)
+      (remove-text-properties 0 (length cached) '(neoment--protected nil) cached)
+      (when (>= (hash-table-count neoment-room--style-cache)
+                neoment-room--style-cache-size)
+        (clrhash neoment-room--style-cache))
+      (puthash key cached neoment-room--style-cache))
+    (copy-sequence cached)))
 
 (defun neoment-room--style-line (line)
-  "Return the body LINE with quote, mention and emoticon faces."
-  (let ((line (copy-sequence line))
-        (user (neoment-user-id))
-        (start 0))
+  "Return the body LINE with the quote face added when it is a quote."
+  (let ((line (copy-sequence line)))
     (when (string-prefix-p (neoment-icon 'vertical_bar_thick) line)
       (add-face-text-property 0 (length line) 'neoment-comment t line))
-    (while (string-match neoment-room--link-regexp line start)
-      (let ((mb (match-beginning 0)) (me (match-end 0))
-            (text (match-string 1 line)) (url (match-string 2 line)))
-        (cond
-         ((string-match-p "\\`https://matrix\\.to/#/@[^[:space:]]+:[^[:space:]]+\\'" url)
-          (add-face-text-property mb me (if (and user (string-search user url))
-                                            'neoment-mention-user
-                                          'neoment-mention)
-                                  nil line))
-         ((and (string-prefix-p "img:" text) (neoment-events-mxc-p url))
-          (add-face-text-property mb me 'neoment-emoticon nil line)
-          (put-text-property mb me 'neoment-emoticon
-                             (list :title (string-trim (substring text 4)) :url url)
-                             line)))
-        (setq start me)))
     line))
 
 (defun neoment-room--reaction-line (message)
@@ -287,16 +633,18 @@ THREAD-ROOT-ID is the thread of the buffer, if any."
             (push (concat bar " …") content-lines)
           (push (concat bar " " (neoment-display-name (neoment-message-sender replied)) ":")
                 content-lines)
-          (dolist (line (split-string (neoment-room--body-text replied) "\n" t))
+          (dolist (line (split-string (neoment-room--style-body
+                                       (neoment-room--body-text replied))
+                                      "\n" t))
             (push (concat bar " " line) content-lines)))))
     ;; Attachment bubble and caption, or the body
     (if attachment
         (let ((bubble (neoment-room--attachment-bubble attachment body)))
           (push (car bubble) content-lines)
           (when (cdr bubble)
-            (dolist (line (split-string (cdr bubble) "\n"))
+            (dolist (line (split-string (neoment-room--style-body (cdr bubble)) "\n"))
               (push line content-lines))))
-      (dolist (line (split-string body "\n"))
+      (dolist (line (split-string (neoment-room--style-body body) "\n"))
         (push line content-lines)))
     (setq content-lines (nreverse content-lines))
     (let* ((first t)
@@ -497,6 +845,12 @@ DELETE is passed on to `buffer-substring--filter'."
   "g" #'revert-buffer
   "?" #'describe-mode)
 
+(defun neoment-room--sync-invisibility ()
+  "Hide or show markdown markup as `neoment-room-hide-markup' says."
+  (if neoment-room-hide-markup
+      (add-to-invisibility-spec 'neoment-markup)
+    (remove-from-invisibility-spec 'neoment-markup)))
+
 (define-derived-mode neoment-room-mode special-mode "Neoment Room"
   "Major mode for Neoment room and thread buffers.
 
@@ -506,6 +860,7 @@ DELETE is passed on to `buffer-substring--filter'."
               filter-buffer-substring-function #'neoment-room--filter-substring
               revert-buffer-function (lambda (&rest _) (neoment-room-render-buffer))
               header-line-format '(:eval (neoment-room--header-line)))
+  (neoment-room--sync-invisibility)
   (when (fboundp 'display-line-numbers-mode)
     (display-line-numbers-mode -1))
   (visual-line-mode 1)
@@ -626,6 +981,7 @@ still shown or not."
                  (not neoment--thread-root-id)
                  (not neoment-room--skip-mark-read))
         (neoment-room-mark-read neoment--room-id))
+      (neoment-room--sync-invisibility)
       (erase-buffer)
       (insert (neoment-room-render neoment--room-id neoment--thread-root-id))
       ;; Cached images are placed now, so anchors can land on them.
@@ -1185,6 +1541,13 @@ unless SILENT."
   (interactive)
   (require 'neoment-notification-settings)
   (neoment-notification-settings-room neoment--room-id))
+
+(defun neoment-room-unload-function ()
+  "Remove the cache invalidation hooks before `neoment-room' is unloaded."
+  (remove-hook 'after-load-functions #'neoment-room--clear-style-cache-after-load)
+  (remove-variable-watcher 'neoment-room-code-language-modes
+                           #'neoment-room--clear-style-caches)
+  nil)
 
 (provide 'neoment-room)
 ;;; neoment-room.el ends here

@@ -60,6 +60,9 @@
     ("<strong>bold text</strong> and <b>more bold</b>" "**bold text** and **more bold**")
     ("<em>italic text</em> and <i>more italic</i>" "*italic text* and *more italic*")
     ("<em>italic123 text</em> and <i>more italic456</i>" "*italic123 text* and *more italic456*")
+    ("<del>old</del> new" "~~old~~ new")
+    ("<s>old</s> new" "~~old~~ new")
+    ("<strike>old</strike> new" "~~old~~ new")
     ("<code>inline code</code>" "`inline code`")
     ("<pre><code>code block</code></pre>" "\n```\ncode block\n```\n")
     ("<pre><code class=\"language-lua\">print(\"Hello\")</code></pre>"

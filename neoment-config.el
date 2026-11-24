@@ -99,8 +99,16 @@ ATTACHMENT plist, whose `:origin' says where it came from."
 
 (defcustom neoment-player-forward-keys t
   "Whether keys typed in the player buffer are forwarded to `mpv'.
-When non-nil every unmodified key is sent to mpv, so its own bindings
-(including your input.conf) apply.  `q' always stops the player."
+When non-nil every unmodified key is sent to mpv, so its own bindings,
+including your input.conf, apply.  `q' always stops the player."
+  :type 'boolean)
+
+(defcustom neoment-room-hide-markup t
+  "Whether markdown markup is hidden in room and thread buffers.
+When non-nil, emphasis markers, code backticks and the brackets and
+URL of links are invisible.  When nil they are shown in the
+`neoment-markup' face.  Copied text always keeps the markup.  Re-render
+the buffer with \\[revert-buffer] after changing it."
   :type 'boolean)
 
 (defcustom neoment-rooms-display-last-message 'message

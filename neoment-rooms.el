@@ -457,6 +457,16 @@ time in seconds (default: the current time)."
                                          (point))
                                 t))))))))
 
+;;;###autoload
+(defun neoment-rooms-quit ()
+  "Ask for confirmation, then run `neoment-quit'."
+  (interactive)
+  (if (y-or-n-p "Quit Neoment? ")
+      (neoment-quit)
+    (message "Operation canceled")))
+
+(declare-function neoment-quit "neoment")
+
 (defvar-keymap neoment-rooms-mode-map
   :doc "Keymap of `neoment-rooms-mode'."
   :parent special-mode-map
@@ -464,6 +474,7 @@ time in seconds (default: the current time)."
   "TAB" #'neoment-rooms-toggle-fold
   "<tab>" #'neoment-rooms-toggle-fold
   "q" #'neoment-toggle-rooms-list
+  "Q" #'neoment-rooms-quit
   "a" #'neoment-rooms-toggle-favorite
   "d" #'neoment-rooms-toggle-direct
   "f" #'neoment-pick-room
@@ -829,6 +840,13 @@ Show a message and return nil when there is none, unless SILENT."
 
 (defvar neoment-ui--timer nil
   "Idle timer that renders the dirty buffers.")
+
+(defun neoment-ui-cancel-timer ()
+  "Cancel the pending render and forget the buffers waiting for it."
+  (when (timerp neoment-ui--timer)
+    (cancel-timer neoment-ui--timer))
+  (setq neoment-ui--timer nil)
+  (clrhash neoment-ui--dirty))
 
 (defun neoment-ui--visible-p (buffer)
   "Return non-nil when BUFFER is shown in a window."

@@ -184,6 +184,12 @@ The texts are passed as arguments, never interpolated in the script."
         "-e" "end run"
         content title))
 
+(defun neoment-notify-shutdown ()
+  "Delete the desktop notification processes."
+  (dolist (process (process-list))
+    (when (string-prefix-p "neoment-notify" (process-name process))
+      (delete-process process))))
+
 (defun neoment-notify-default-desktop-handler (title content)
   "Show a desktop notification with TITLE and CONTENT."
   (pcase system-type

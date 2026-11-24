@@ -512,6 +512,9 @@ DELETE is passed on to `buffer-substring--filter'."
   (hl-line-mode 1)
   (add-hook 'kill-buffer-hook #'neoment-room--on-kill nil t))
 
+(defvar-local neoment-room--event-buffer-p nil
+  "Non-nil in a buffer showing the JSON of an event.")
+
 (defun neoment-room--on-kill ()
   "Stop tracking the room when its buffer is killed."
   (when (and neoment--room-id (not neoment--thread-root-id)
@@ -1026,6 +1029,7 @@ unless SILENT."
                 (json-pretty-print-buffer)
                 (goto-char (point-min)))
               (if (fboundp 'js-json-mode) (js-json-mode) (js-mode))
+              (setq neoment-room--event-buffer-p t)
               (setq header-line-format (format "Event: %s" id))
               (view-mode 1)
               (local-set-key (kbd "q") #'quit-window))

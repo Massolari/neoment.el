@@ -30,16 +30,16 @@
   (neoment-compose-test
     (let ((msg (neoment-message--create :id "$m" :sender "@alice:s" :content "x")))
       (should (equal (neoment-compose-buffer-name "!r:s")
-                     "neoment://compose/Sending to dev"))
+                     "*neoment-compose: Sending to dev*"))
       (should (equal (neoment-compose-buffer-name "!r:s" "$root")
-                     "neoment://compose/Sending to thread in dev"))
+                     "*neoment-compose: Sending to thread in dev*"))
       (should (equal (neoment-compose-buffer-name "!r:s" nil (list :type 'reply :message msg))
-                     "neoment://compose/Replying to Alice"))
+                     "*neoment-compose: Replying to Alice*"))
       (should (equal (neoment-compose-buffer-name "!r:s" nil (list :type 'replace :message msg))
-                     "neoment://compose/Editing message on dev"))
+                     "*neoment-compose: Editing message on dev*"))
       (should (equal (neoment-compose-buffer-name "!r:s" nil (list :type 'reply :message msg)
                                                   '(:filename "a.png"))
-                     "neoment://compose/Replying to Alice with the attachment a.png")))))
+                     "*neoment-compose: Replying to Alice with the attachment a.png*")))))
 
 (ert-deftest neoment-compose-edit-prefill-and-cancel ()
   (neoment-compose-test

@@ -572,9 +572,9 @@
   (neoment-room-test
     (setf (neoment-room-topic room) "Daily chat")
     (neoment-room-test-msg room "$a" "@alice:s" "hi" (neoment-room-test-ts 9 12 44))
-    (should (equal (neoment-room-buffer-name "!r:s") "neoment://room/!r:s/dev"))
-    (should (equal (neoment-room-thread-buffer-name "$a" "Alice")
-                   "neoment://thread/$a/sender/Alice"))
+    (should (equal (neoment-room-buffer-name "!r:s") "*neoment-room: dev*"))
+    (should (equal (neoment-room-thread-buffer-name "!r:s" "Alice")
+                   "*neoment-thread: Alice in dev*"))
     (let ((buffer (generate-new-buffer "x")))
       (neoment-room--setup-buffer buffer "!r:s")
       (with-current-buffer buffer
@@ -747,7 +747,7 @@
               'pending))
         (save-window-excursion
           (setq buffer (neoment-room-open "!r:s"))
-          (should (equal (buffer-name buffer) "neoment://room/!r:s/dev"))
+          (should (equal (buffer-name buffer) "*neoment-room: dev*"))
           (should (neoment-room-is-tracked room))
           (should (zerop (hash-table-count (neoment-room-messages room))))
           (should (seq-find (lambda (u) (string-suffix-p "/messages" u)) (neoment-test-request-urls)))
@@ -759,6 +759,24 @@
       (kill-buffer buffer)
       (should-not (neoment-room-is-tracked room))
       (should (equal (hash-table-keys (neoment-room-messages room)) '("$3"))))))
+
+(ert-deftest neoment-room-open-same-display-name ()
+  (neoment-room-test
+    (setf (neoment-room-name (neoment-get-room "!other:s")) "dev")
+    (let (first second)
+      (unwind-protect
+          (save-window-excursion
+            (setq first (neoment-room-open "!r:s")
+                  second (neoment-room-open "!other:s"))
+            (should-not (eq first second))
+            (should (equal (buffer-name first) "*neoment-room: dev*"))
+            (should (equal (buffer-name second) "*neoment-room: dev*<2>"))
+            (should (equal (buffer-local-value 'neoment--room-id first) "!r:s"))
+            (should (equal (buffer-local-value 'neoment--room-id second) "!other:s"))
+            (should (eq (neoment-room-open "!r:s") first))
+            (should (eq (neoment-room-open "!other:s") second)))
+        (dolist (buffer (list first second))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
 
 ;;;; 5.5 Read marking
 

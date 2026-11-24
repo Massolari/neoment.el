@@ -119,7 +119,7 @@ HTTP requests are answered by `neoment-actions-test--http'."
         (neoment-room-open-thread)
         (should (equal (car opened) '("!r:s" :thread-root-id "$m")))))
     (should (equal (neoment-compose-buffer-name "!r:s" "$m")
-                   "neoment://compose/Sending to thread in dev"))))
+                   "*neoment-compose: Sending to thread in dev*"))))
 
 (ert-deftest neoment-actions-open-thread-buffer ()
   (neoment-actions-test
@@ -130,7 +130,7 @@ HTTP requests are answered by `neoment-actions-test--http'."
     (let ((thread (progn (neoment-room-open-thread) (current-buffer))))
       (unwind-protect
           (progn
-            (should (equal (buffer-name thread) "neoment://thread/$root/sender/Alice"))
+            (should (equal (buffer-name thread) "*neoment-thread: Alice in dev*"))
             (should (equal neoment--thread-root-id "$root"))
             (should (equal (buffer-string)
                            (concat (make-string 28 ?\s) " │ Loading thread...")))

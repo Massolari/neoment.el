@@ -207,7 +207,7 @@ WIDTH is the window width.  EXPANDED shows the member list."
 
 (defun neoment-room-info-buffer-name (room-id)
   "Return the room information buffer name of ROOM-ID."
-  (format "neoment://room/info/%s/%s" room-id (neoment-room-display-name-with-space room-id)))
+  (format "*neoment-room-info: %s*" (neoment-room-display-name-with-space room-id)))
 
 (defun neoment-room-info-open (room-id &optional beside)
   "Show information about ROOM-ID.

@@ -792,7 +792,7 @@ Downloads write \"data\" to the requested output file."
           (should (equal (plist-get req :content-type) "application/pdf")))
         (let ((compose (current-buffer)))
           (should (equal (buffer-name compose)
-                         "neoment://compose/Sending to dev with the attachment report.pdf"))
+                         "*neoment-compose: Sending to dev with the attachment report.pdf*"))
           (should (equal (buffer-local-value 'neoment-compose--attachment compose)
                          (list :filename "report.pdf" :url "mxc://s/up"
                                :mimetype "application/pdf" :size 5)))
@@ -802,7 +802,7 @@ Downloads write \"data\" to the requested output file."
           (neoment-room-upload))
         (should (neoment-test-message-p "File does not exist: /nonexistent/x")))
         (dolist (b (buffer-list))
-          (when (string-prefix-p "neoment://compose" (buffer-name b)) (kill-buffer b)))
+          (when (string-prefix-p "*neoment-compose:" (buffer-name b)) (kill-buffer b)))
         (kill-buffer buffer))))))
 
 (ert-deftest neoment-media-clipboard-errors ()

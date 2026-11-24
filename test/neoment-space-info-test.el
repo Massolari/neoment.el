@@ -94,7 +94,7 @@
           (let ((buffer (neoment-space-open "!sp:s")))
             (unwind-protect
                 (cl-letf (((symbol-function 'neoment-rooms-open-room) (lambda (id) (push id opened))))
-                  (should (equal (buffer-name buffer) "neoment://space/!sp:s/Neovim Brasil"))
+                  (should (equal (buffer-name buffer) "*neoment-space: Neovim Brasil*"))
                   (should (string-search "sala-x" (buffer-string)))
                   ;; Not an item.
                   (goto-char (point-min))
@@ -195,7 +195,7 @@
       (let ((buffer (neoment-room-info-open "!r:s")))
         (unwind-protect
             (with-current-buffer buffer
-              (should (equal (buffer-name buffer) "neoment://room/info/!r:s/dev"))
+              (should (equal (buffer-name buffer) "*neoment-room-info: dev*"))
               (neoment-test-with-http (lambda (_) '(:ok nil))
                 (neoment-room-info-toggle-low-priority)
                 (should (string-suffix-p "/tags/m.lowpriority" (car (neoment-test-request-urls))))

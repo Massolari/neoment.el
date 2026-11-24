@@ -160,7 +160,7 @@ Each line carries the `neoment-space-item' property."
 
 (defun neoment-space-buffer-name (space-id)
   "Return the buffer name of SPACE-ID."
-  (format "neoment://space/%s/%s" space-id (neoment-room-display-name space-id)))
+  (format "*neoment-space: %s*" (neoment-room-display-name space-id)))
 
 (defun neoment-space-open (space-id)
   "Show the hierarchy of SPACE-ID."

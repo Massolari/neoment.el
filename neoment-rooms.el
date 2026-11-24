@@ -50,8 +50,9 @@
 (declare-function neoment-notification-settings "neoment-notification-settings")
 (declare-function neoment-notification-settings-room "neoment-notification-settings")
 
-(defconst neoment-rooms-buffer-name " neoment://rooms"
-  "Name of the room list buffer.  The space hides it from buffer lists.")
+(defconst neoment-rooms-buffer-name " *neoment-rooms*"
+  "Name of the room list buffer.
+The leading space hides it from `switch-to-buffer' and buffer lists.")
 
 (defconst neoment-rooms-sections
   '((invited . "Invited") (buffers . "Buffers") (favorites . "Favorites")

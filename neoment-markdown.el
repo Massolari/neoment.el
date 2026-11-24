@@ -229,8 +229,7 @@ In TEMPLATE, %N stands for group N."
   "Return the markdown of a spoiler with DESCRIPTION and CONTENT.
 CONTENT is HTML: its tags are dropped, its entities decoded and its
 code placeholders, keys of the alist CODES, replaced by the plain code.
-When it is empty or has spaces, backticks or link delimiters it goes
-within `<…>', with `\\',
+It always goes within `<…>', so the room styler can tell it apart, with `\\',
 `<' and `>' escaped by a backslash and newlines written as `\\n'.
 DESCRIPTION, also HTML, has its brackets, backticks and newlines replaced so it
 stays a valid link text."
@@ -242,12 +241,10 @@ stays a valid link text."
                 (neoment-markdown--decode-entities
                  (replace-regexp-in-string "<[^>]*>" "" content))
                 t t))
-         (content (if (string-match-p "\\`\\'\\|[][()<>`\\[:space:]\n]" text)
-                      (format "<%s>"
-                              (string-replace
-                               "\n" "\\n"
-                               (replace-regexp-in-string "[\\<>]" "\\\\\\&" text)))
-                    text))
+         (content (format "<%s>"
+                          (string-replace
+                           "\n" "\\n"
+                           (replace-regexp-in-string "[\\<>]" "\\\\\\&" text))))
          (description
           (and description
                (replace-regexp-in-string

@@ -233,8 +233,10 @@ undone, and `\\n' becomes a newline."
   "Regexp matching the closing line of a fenced code block.")
 
 (defconst neoment-room--inline-code-regexp
-  "\\(`+\\)\\([^`\n]\\|[^`\n][^\n]*?[^`\n]\\)\\1"
-  "Regexp matching inline code.")
+  "\\(`+\\)\\([^`\n]\\|[^`\n][^\n]*?[^`\n]\\)\\(\\1\\)\\(?:[^`]\\|\\'\\)"
+  "Regexp matching inline code.
+Group 1 is the opening run, group 2 the code and group 3 the closing
+run, which must not be followed by another backtick.")
 
 (defconst neoment-room--emphasis-rules
   (let ((inner (lambda (c) (format "\\([^%s[:space:]\n]\\(?:[^\n]*?[^%s[:space:]\n]\\)??\\)"
@@ -399,7 +401,7 @@ nil means MODE gave no faces or failed."
   "Style the inline code of STRING."
   (let ((pos 0))
     (while (string-match neoment-room--inline-code-regexp string pos)
-      (let ((mb (match-beginning 0)) (me (match-end 0))
+      (let ((mb (match-beginning 0)) (me (match-end 3))
             (cb (match-beginning 2)) (ce (match-end 2)))
         (if (neoment-room--protected-p mb me string)
             (setq pos (1+ mb))

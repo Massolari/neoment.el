@@ -7,7 +7,7 @@ For display, the converter SHALL turn:
 - `<strong>`/`<b>` into `**`, `<em>`/`<i>` into `*`, `<del>`/`<s>`/`<strike>` into `~~`, `<a href>` into `[t](url)`
 - tags with `data-md="x"` into `x content x`
 - `<p data-mx-forwarded-notice>` into `_↪️ Forwarded:_` plus an empty line
-- spoilers into `[Spoiler](content)` or `[Spoiler for <desc>](content)`, with content in `<…>` when it contains spaces
+- spoilers into `[Spoiler](content)` or `[Spoiler for <desc>](content)`, with content always in `<…>` (tags dropped, entities decoded, `\`, `<` and `>` escaped by a backslash and newlines written as `\n`)
 - `<img data-mx-emoticon>` into `[img: title](src)`
 
 Unknown tags are dropped but their content kept. Entities are decoded at the end.

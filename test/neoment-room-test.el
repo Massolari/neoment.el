@@ -397,11 +397,16 @@
     ;; Backticks in a spoiler don't expose it.
     (dolist (case '(("<span data-mx-spoiler>a`b</span> `c`" "Spoiler c" "a`b")
                     ("<span data-mx-spoiler=\"a`b\">x</span> `c`" "Spoiler for a'b c" "x")
-                    ("<span data-mx-spoiler></span>" "Spoiler" "")))
+                    ("<span data-mx-spoiler></span>" "Spoiler" "")
+                    ("don`t <span data-mx-spoiler>secret</span> won`t"
+                     "don`t Spoiler won`t" "secret")))
       (let ((s (neoment-room--style-body (neoment-markdown-from-html (nth 0 case)))))
         (should (equal (neoment-room-test-visible s) (nth 1 case)))
-        (should (equal-including-properties (get-text-property 1 'neoment-link s)
-                                            (nth 2 case)))))
+        (should (equal-including-properties
+                 (get-text-property (string-search "Spoiler" s) 'neoment-link s)
+                 (nth 2 case)))))
+    ;; A closing backtick can't be part of a longer run.
+    (should (equal (neoment-room-test-visible (neoment-room--style-body "`a``b`")) "a``b"))
     ;; Other links inside code stay code; only spoilers are styled first.
     (let ((s (neoment-room--style-body "`[a](<x>)` `[b](y)`")))
       (should (equal (neoment-room-test-visible s) "[a](<x>) [b](y)")))))

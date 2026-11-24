@@ -238,20 +238,25 @@ undone, and `\\n' becomes a newline."
 Group 1 is the opening run, group 2 the code and group 3 the closing
 run, which must not be followed by another backtick.")
 
+(defun neoment-room--emphasis-rule (marker exclude face intraword)
+  "Return an emphasis rule as (OPEN-REGEXP CLOSE-REGEXP FACE).
+MARKER is the marker text.  The emphasized text can't start or end with
+whitespace or a character of EXCLUDE.  Unless INTRAWORD, the markers
+can't touch a word character on their outer side."
+  (let ((q (regexp-quote marker))
+        (edge (format "[^%s \t\n]" exclude)))
+    (list (concat (if intraword "" "\\(?:^\\|[^[:alnum:]_]\\)") "\\(" q "\\)" edge)
+          (concat edge "\\(" q "\\)" (if intraword "" "\\(?:$\\|[^[:alnum:]_]\\)"))
+          face)))
+
 (defconst neoment-room--emphasis-rules
-  (let ((inner (lambda (c) (format "\\([^%s[:space:]\n]\\(?:[^\n]*?[^%s[:space:]\n]\\)??\\)"
-                                   c c))))
-    `((,(concat "\\(\\*\\*\\)" (funcall inner "") "\\(\\*\\*\\)") . neoment-bold)
-      (,(concat "\\(?:^\\|[^[:alnum:]_]\\)\\(__\\)" (funcall inner "")
-                "\\(__\\)\\(?:$\\|[^[:alnum:]_]\\)")
-       . neoment-bold)
-      (,(concat "\\(~~\\)" (funcall inner "") "\\(~~\\)") . neoment-strike)
-      (,(concat "\\(\\*\\)" (funcall inner "*") "\\(\\*\\)") . neoment-italic)
-      (,(concat "\\(?:^\\|[^[:alnum:]_]\\)\\(_\\)" (funcall inner "_")
-                "\\(_\\)\\(?:$\\|[^[:alnum:]_]\\)")
-       . neoment-italic)))
-  "Emphasis rules as (REGEXP . FACE), longest marker first.
-Groups 1 and 3 are the markers and group 2 the text.")
+  (list (neoment-room--emphasis-rule "**" "" 'neoment-bold t)
+        (neoment-room--emphasis-rule "__" "" 'neoment-bold nil)
+        (neoment-room--emphasis-rule "~~" "" 'neoment-strike t)
+        (neoment-room--emphasis-rule "*" "*" 'neoment-italic t)
+        (neoment-room--emphasis-rule "_" "_" 'neoment-italic nil))
+  "Emphasis rules as (OPEN-REGEXP CLOSE-REGEXP FACE), longest marker first.
+Group 1 of each regexp is the marker.")
 
 (defvar warning-minimum-level)
 (defvar warning-minimum-log-level)
@@ -476,20 +481,47 @@ backticks in a spoiler can't expose it."
           (add-face-text-property mb me 'neoment-heading nil string))
         (setq pos (max me (1+ mb)))))))
 
+(defun neoment-room--emphasis-closer (close-regexp string from)
+  "Return (START . END) of the first free CLOSE-REGEXP in STRING after FROM.
+Only the line of FROM is searched, and closers that are protected, such
+as the markers of an inner emphasis, are skipped."
+  (let ((line-end (or (string-search "\n" string from) (length string)))
+        (pos from)
+        (found nil))
+    (while (and (not found)
+                (string-match close-regexp string pos)
+                (<= (match-end 1) line-end))
+      (let ((cb (match-beginning 1)) (ce (match-end 1)))
+        (if (neoment-room--protected-p cb ce string)
+            (setq pos cb)
+          (setq found (cons cb ce)))))
+    found))
+
 (defun neoment-room--style-emphasis (string)
-  "Style the emphasis of STRING."
-  (pcase-dolist (`(,regexp . ,face) neoment-room--emphasis-rules)
+  "Style the emphasis of STRING.
+An emphasis can contain another one, as in \"*a **b** c*\"."
+  (pcase-dolist (`(,open-regexp ,close-regexp ,face) neoment-room--emphasis-rules)
     (let ((pos 0))
-      (while (and (< pos (length string)) (string-match regexp string pos))
-        (let ((ob (match-beginning 1)) (oe (match-end 1))
-              (cb (match-beginning 3)) (ce (match-end 3)))
-          (if (or (neoment-room--protected-p ob oe string)
-                  (neoment-room--protected-p cb ce string))
+      (while (and (< pos (length string)) (string-match open-regexp string pos))
+        (let* ((ob (match-beginning 1)) (oe (match-end 1))
+               (close (and (not (neoment-room--protected-p ob oe string))
+                           (neoment-room--emphasis-closer close-regexp string oe))))
+          ;; In "**a *b***" the bold takes the last two stars of the run,
+          ;; leaving the first to close the inner italic.
+          (when (and close
+                     (= (- oe ob) 2)
+                     (< (cdr close) (length string))
+                     (eq (aref string (cdr close)) (aref string ob))
+                     (string-search (string (aref string ob))
+                                    (substring string oe (car close)))
+                     (not (neoment-room--protected-p (cdr close) (1+ (cdr close)) string)))
+            (setq close (cons (1+ (car close)) (1+ (cdr close)))))
+          (if (not close)
               (setq pos (1+ ob))
-            (add-face-text-property oe cb face nil string)
+            (add-face-text-property oe (car close) face nil string)
             (neoment-room--markup ob oe string)
-            (neoment-room--markup cb ce string)
-            (setq pos ce)))))))
+            (neoment-room--markup (car close) (cdr close) string)
+            (setq pos (cdr close))))))))
 
 (defvar neoment-room--style-cache (make-hash-table :test #'equal)
   "Cache of styled bodies, from (USER-ID . BODY) to the styled string.")

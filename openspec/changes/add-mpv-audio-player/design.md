@@ -20,11 +20,11 @@ Constraints: the package targets macOS/Linux primarily, already requires `transi
 ## Decisions
 
 **1. Drive mpv through its JSON IPC, not a terminal.**
-Start `mpv --no-terminal --no-video --input-ipc-server=<sock> --pause=no <file>`, then connect with `make-network-process :family 'local :service <sock>`. Commands are newline-terminated JSON (`{"command":["cycle","pause"]}`); mpv replies and emits events as JSON lines.
+Start `mpv --no-input-terminal --no-video --msg-level=all=error --no-msg-color --input-ipc-server=<sock> --pause=no <file>`, then connect with `make-network-process :family 'local :service <sock>`. Commands are newline-terminated JSON (`{"command":["cycle","pause"]}`); mpv replies and emits events as JSON lines.
 *Why:* this is the established Emacs approach (`mpv.el`, EMMS `emms-player-mpv`, `empv`). Alternatives: (a) `term`/`vterm` buffer — works, but it is a 3-line terminal that needs `char-mode`, steals keys from the room buffer and `vterm` is an external module; (b) `comint` stdin — mpv reads keys from a tty, not lines; (c) depend on `mpv.el` — adds a dependency for a tiny feature and its API surface is larger than needed.
 
 **2. Own the socket path and wait for it.**
-Socket: `(make-temp-name (expand-file-name "neoment-mpv-" temporary-file-directory))`; the directory is the user's temp dir and the file is created by mpv with user-only permissions. mpv creates the socket asynchronously, so connect from a short timer that retries (every 0.05 s, up to ~2 s) and reports `Could not start mpv` with mpv's stderr on timeout or early exit.
+Socket: `ipc` inside a private directory from `(make-temp-file "neoment-mpv-" t)` (mode 0700, removed on cleanup), since mpv's IPC accepts `run` and the socket must not be reachable by others. mpv creates the socket asynchronously, so connect from a short timer that retries (every 0.05 s, up to ~5 s; a refused connection is retried, since the socket file can exist before mpv listens) and reports `Could not start mpv` with mpv's error output on timeout or early exit.
 
 **3. Observe properties instead of polling.**
 After connecting send `observe_property` for `pause`, `time-pos`, `duration`, `speed`, `volume` and `mute` (volume and mute are shown because `--no-video` leaves no OSD to give feedback). The process filter accumulates partial lines, parses complete ones with `json-parse-string` (`:object-type 'plist`, `:false-object nil`), updates a state struct and re-renders the player buffer. Events with `"event":"end-file"` and `reason` `eof` mark natural completion.
@@ -34,7 +34,7 @@ After connecting send `observe_property` for `pause`, `time-pos`, `duration`, `s
 *Why:* a queue or multiple players add UI and lifecycle surface that the user did not ask for.
 
 **5. Relative seeking and clamped speed.**
-Seek with `["seek", ±step, "relative"]` (mpv clamps at 0 and EOF). Speed is set absolutely with `["set_property","speed",N]` computed from the observed speed and clamped to a minimum of 0.25, so repeated presses stay deterministic.
+Seek with `["seek", ±step, "relative"]` (mpv clamps at 0 and EOF). Speed changes use `["add","speed",±step]` so rapid presses accumulate; only a step that would go below 0.25 (judged from the observed speed) is sent as an absolute `set_property`. Reset sets 1.0.
 
 **6. Two control surfaces.**
 `*neoment-player*` (a `special-mode` derivative, 1–2 lines, shown with the same `display-buffer-below-selected` action as today) forwards keys to mpv (decision 6b), and `neoment-player-menu` is a `transient-define-prefix` reachable via `O` from the room buffer, calling the dedicated commands from decision 5. A transient suffix keeps the prefix open after a command (`:transient t`) so the user can press seek repeatedly. Full forwarding is limited to the player buffer: in the room buffer keys such as `n`/`p` belong to the room.
@@ -42,7 +42,7 @@ Seek with `["seek", ±step, "relative"]` (mpv clamps at 0 and EOF). Speed is set
 **6b. Forward keys with mpv's `keypress` command.**
 `neoment-player-forward-key` is bound in the player map to every printable character (a loop over `32..126` plus non-ASCII self-insert via `[remap self-insert-command]`) and to the special keys `<left>`, `<right>`, `<up>`, `<down>`, `RET`, `TAB`, `DEL`, `<home>`, `<end>`, `<prior>`, `<next>`, `<f1>`–`<f12>`. It reads `last-command-event` and `neoment-player--key-name` maps it to mpv's name (printable char → itself, `?\s` → `SPACE`, `RET` → `ENTER`, `TAB` → `TAB`, `DEL` → `BS`, `<left>` → `LEFT`, `<prior>` → `PGUP`, `<next>` → `PGDWN`, `<f5>` → `F5`, …) and sends `["keypress", name]`. Events with modifiers map to nil and are not bound, so `C-x`, `M-x`, `C-g` keep their Emacs meaning. Only `q` is deliberately left out: it stops the player and closes the window so the buffer is cleaned up (forwarded it would only make mpv quit). The player map has no parent keymap, so `special-mode` keys such as `g` or `n` do not shadow forwarded keys. The whole forwarding layer is installed only while `neoment-player-forward-keys` is non-nil; when nil the map has just the dedicated bindings.
 *Why:* it reuses mpv's own bindings and the user's `input.conf` with no per-command wrappers. *Alternatives:* (a) hard-code a list of commands — the original plan, less capable and needs maintenance; (b) a terminal buffer — rejected in decision 1.
-*Unverified assumption:* that `keypress` triggers the default bindings with `--no-terminal --no-video`. It goes through mpv's core input layer so it should, but the first implementation task verifies it against a real mpv before the rest builds on it. Window-dependent bindings (fullscreen, stats overlay, OSD) will be no-ops; `s` writes a screenshot.
+*Unverified assumption:* that `keypress` triggers the default bindings with `--no-video`. It goes through mpv's core input layer so it should, but the first implementation task verifies it against a real mpv before the rest builds on it. Window-dependent bindings (fullscreen, stats overlay, OSD) will be no-ops; `s` writes a screenshot.
 
 **7. Lifecycle.**
 The mpv sentinel removes the socket file, deletes the connection, clears state and (if the file ended naturally) shows `Playback finished`. A `kill-emacs-hook` entry calls stop. `neoment-player-stop` kills the mpv process (not just the connection) so nothing outlives the player.

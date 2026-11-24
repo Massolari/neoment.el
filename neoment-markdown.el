@@ -229,9 +229,10 @@ In TEMPLATE, %N stands for group N."
   "Return the markdown of a spoiler with DESCRIPTION and CONTENT.
 CONTENT is HTML: its tags are dropped, its entities decoded and its
 code placeholders, keys of the alist CODES, replaced by the plain code.
-When it has spaces or link delimiters it goes within `<…>', with `\\',
+When it is empty or has spaces, backticks or link delimiters it goes
+within `<…>', with `\\',
 `<' and `>' escaped by a backslash and newlines written as `\\n'.
-DESCRIPTION, also HTML, has its brackets and newlines replaced so it
+DESCRIPTION, also HTML, has its brackets, backticks and newlines replaced so it
 stays a valid link text."
   (let* ((text (replace-regexp-in-string
                 "{{CODEBLOCK[0-9]+}}"
@@ -241,7 +242,7 @@ stays a valid link text."
                 (neoment-markdown--decode-entities
                  (replace-regexp-in-string "<[^>]*>" "" content))
                 t t))
-         (content (if (string-match-p "[][()<>\\[:space:]\n]" text)
+         (content (if (string-match-p "\\`\\'\\|[][()<>`\\[:space:]\n]" text)
                       (format "<%s>"
                               (string-replace
                                "\n" "\\n"
@@ -251,8 +252,10 @@ stays a valid link text."
           (and description
                (replace-regexp-in-string
                 "[ \t\n]+" " "
-                (string-replace "[" "(" (string-replace "]" ")" (neoment-markdown--decode-entities
-                                                                description)))))))
+                (string-replace
+                 "`" "'"
+                 (string-replace "[" "(" (string-replace "]" ")" (neoment-markdown--decode-entities
+                                                                 description))))))))
     (if description
         (format "[Spoiler for %s](%s)" description content)
       (format "[Spoiler](%s)" content))))

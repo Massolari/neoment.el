@@ -387,6 +387,37 @@
     (should (equal (neoment-room--link-destination "<a\\>b\\\\c\\nd>") "a>b\\c\nd"))
     (should (equal (neoment-room--link-destination "<abc") "<abc"))))
 
+(ert-deftest neoment-room-style-round-three ()
+  (neoment-room-test
+    ;; One-character code spans
+    (let ((s (neoment-room--style-body "`a` and `b`")))
+      (should (equal (neoment-room-test-visible s) "a and b"))
+      (should (memq 'neoment-code (neoment-room-test-faces s "b")))
+      (should (neoment-room-test-no-face-p (substring s 3 8) 'neoment-code)))
+    ;; Backticks in a spoiler don't expose it.
+    (dolist (case '(("<span data-mx-spoiler>a`b</span> `c`" "Spoiler c" "a`b")
+                    ("<span data-mx-spoiler=\"a`b\">x</span> `c`" "Spoiler for a'b c" "x")
+                    ("<span data-mx-spoiler></span>" "Spoiler" "")))
+      (let ((s (neoment-room--style-body (neoment-markdown-from-html (nth 0 case)))))
+        (should (equal (neoment-room-test-visible s) (nth 1 case)))
+        (should (equal-including-properties (get-text-property 1 'neoment-link s)
+                                            (nth 2 case)))))
+    ;; Other links inside code stay code; only spoilers are styled first.
+    (let ((s (neoment-room--style-body "`[a](<x>)` `[b](y)`")))
+      (should (equal (neoment-room-test-visible s) "[a](<x>) [b](y)")))))
+
+(ert-deftest neoment-room-unload-removes-hooks ()
+  (should (functionp 'neoment-room-unload-function))
+  (let ((after-load-functions (list #'neoment-room--clear-style-cache-after-load)))
+    (unwind-protect
+        (progn
+          (neoment-room-unload-function)
+          (should-not (memq #'neoment-room--clear-style-cache-after-load after-load-functions))
+          (should-not (memq #'neoment-room--clear-style-caches
+                            (get-variable-watchers 'neoment-room-code-language-modes))))
+      (add-variable-watcher 'neoment-room-code-language-modes
+                            #'neoment-room--clear-style-caches))))
+
 (ert-deftest neoment-room-style-cache-invalidation ()
   (neoment-room-test
     (let ((body "```foo\n(defun x ())\n```")

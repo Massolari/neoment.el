@@ -212,6 +212,9 @@ CAPTION is nil when there is none."
 Group 1 is the text, group 2 the destination: either within `<…>', with
 backslash escapes, or bare with at most one level of balanced parentheses.")
 
+(defconst neoment-room--spoiler-text-regexp "\\`Spoiler\\(?: for .*\\)?\\'"
+  "Regexp matching the text of a spoiler link.")
+
 (defun neoment-room--link-destination (raw)
   "Return the URL of the markdown link destination RAW.
 A destination within `<…>' has the escapes `\\\\', `\\<' and `\\>'
@@ -230,7 +233,7 @@ undone, and `\\n' becomes a newline."
   "Regexp matching the closing line of a fenced code block.")
 
 (defconst neoment-room--inline-code-regexp
-  "\\(`+\\)\\([^`\n]\\(?:[^\n]*?[^`\n]\\)?\\)\\1"
+  "\\(`+\\)\\([^`\n]\\|[^`\n][^\n]*?[^`\n]\\)\\1"
   "Regexp matching inline code.")
 
 (defconst neoment-room--emphasis-rules
@@ -247,6 +250,9 @@ undone, and `\\n' becomes a newline."
        . neoment-italic)))
   "Emphasis rules as (REGEXP . FACE), longest marker first.
 Groups 1 and 3 are the markers and group 2 the text.")
+
+(defvar warning-minimum-level)
+(defvar warning-minimum-log-level)
 
 (defvar neoment-room-code-language-modes
   '(("elisp" . emacs-lisp-mode) ("emacs-lisp" . emacs-lisp-mode) ("el" . emacs-lisp-mode)
@@ -413,23 +419,29 @@ nil means MODE gave no faces or failed."
   :doc "Keymap on link text in room buffers."
   "<mouse-1>" #'neoment-room-open-link-at-mouse)
 
-(defun neoment-room--style-links (string)
-  "Style the markdown links of STRING."
+(defun neoment-room--style-links (string &optional spoilers-only)
+  "Style the markdown links of STRING.
+With SPOILERS-ONLY, style only the spoilers made by the converter, whose
+destination is within `<…>'; this runs before inline code so that
+backticks in a spoiler can't expose it."
   (let ((pos 0)
         (user (neoment-user-id)))
     (while (string-match neoment-room--link-regexp string pos)
       (let* ((mb (match-beginning 0)) (me (match-end 0))
              (tb (match-beginning 1)) (te (match-end 1))
-             (text (match-string 1 string))
-             (raw (match-string 2 string))
+             (text (match-string-no-properties 1 string))
+             (raw (match-string-no-properties 2 string))
              (url (neoment-room--link-destination raw)))
         ;; Only the delimiters must be unclaimed: code inside the
         ;; destination, as in a spoiler, doesn't prevent the link.
-        (if (or (neoment-room--protected-p mb tb string)
+        (if (or (and spoilers-only
+                     (not (and (string-prefix-p "<" raw)
+                               (string-match-p neoment-room--spoiler-text-regexp text))))
+                (neoment-room--protected-p mb tb string)
                 (neoment-room--protected-p te (+ te 2) string)
                 (neoment-room--protected-p (1- me) me string))
             (setq pos (1+ mb))
-          (let ((spoiler (string-match-p "\\`Spoiler\\(?: for .*\\)?\\'" text))
+          (let ((spoiler (string-match-p neoment-room--spoiler-text-regexp text))
                 (face (cond
                        ((string-match-p "\\`https://matrix\\.to/#/@[^[:space:]]+:[^[:space:]]+\\'"
                                         url)
@@ -507,6 +519,7 @@ since every render restyles every message."
     (unless cached
       (setq cached (copy-sequence body))
       (neoment-room--style-fences cached)
+      (neoment-room--style-links cached t)
       (neoment-room--style-inline-code cached)
       (neoment-room--style-links cached)
       (neoment-room--style-headings cached)
@@ -1490,6 +1503,13 @@ unless SILENT."
   (interactive)
   (require 'neoment-notification-settings)
   (neoment-notification-settings-room neoment--room-id))
+
+(defun neoment-room-unload-function ()
+  "Remove the cache invalidation hooks before `neoment-room' is unloaded."
+  (remove-hook 'after-load-functions #'neoment-room--clear-style-cache-after-load)
+  (remove-variable-watcher 'neoment-room-code-language-modes
+                           #'neoment-room--clear-style-caches)
+  nil)
 
 (provide 'neoment-room)
 ;;; neoment-room.el ends here

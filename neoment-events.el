@@ -575,8 +575,9 @@ room changed."
   (let ((content (alist-get 'content event)))
     (pcase (alist-get 'type event)
       ("m.room.name"
-       (when (stringp (alist-get 'name content))
-         (setf (neoment-invited-room-name room) (alist-get 'name content)))
+       (let ((name (alist-get 'name content)))
+         (when (and (stringp name) (not (string-empty-p name)))
+           (setf (neoment-invited-room-name room) name)))
        t)
       ("m.room.canonical_alias"
        (let ((alias (or (alist-get 'alias content)

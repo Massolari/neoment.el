@@ -138,6 +138,16 @@
                 (neoment-events-test-text "early" :id "$1" :ts 10)))
     (should (equal (plist-get (neoment-room-last-activity room) :event-id) "$2"))))
 
+(ert-deftest neoment-events-invited-empty-name ()
+  (neoment-events-test
+    (let ((invited (neoment-get-invited-room "!i:s")))
+      (neoment-events-handle-invited
+       invited (neoment-test-event "m.room.name" :content '((name . ""))))
+      (should (equal (neoment-invited-room-name invited) "!i:s"))
+      (neoment-events-handle-invited
+       invited (neoment-test-event "m.room.name" :content '((name . "inv"))))
+      (should (equal (neoment-invited-room-name invited) "inv")))))
+
 (ert-deftest neoment-events-account-data-and-state ()
   (neoment-events-test
     (neoment-events-handle room (neoment-test-event "m.fully_read" :content '((event_id . "$f"))))

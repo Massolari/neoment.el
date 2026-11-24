@@ -87,6 +87,40 @@
     (neoment-config-validate)
     (neoment-notify-start-focus-tracking)))
 
+;;;; Quit
+
+(defconst neoment--buffer-modes
+  '(neoment-room-mode neoment-space-mode neoment-room-info-mode neoment-rooms-mode
+    neoment-compose-mode neoment-notification-settings-mode)
+  "Major modes of the buffers `neoment-quit' kills.")
+
+(defun neoment--neoment-buffer-p (buffer)
+  "Return non-nil when BUFFER is a Neoment buffer."
+  (with-current-buffer buffer
+    (or (apply #'derived-mode-p neoment--buffer-modes)
+        neoment-room--event-buffer-p)))
+
+;;;###autoload
+(defun neoment-quit ()
+  "Stop Neoment and kill its buffers, keeping the saved session.
+Sync stops, timers and helper processes are removed, and every Neoment
+buffer is killed without confirmation, even a compose buffer with
+unsent text.  Run `neoment' to start again."
+  (interactive)
+  (setq neoment--quitting t)
+  (neoment-sync-stop t)
+  (neoment-ui-cancel-timer)
+  (neoment-media-shutdown)
+  (neoment-notify-shutdown)
+  (let ((kill-buffer-query-functions nil))
+    (dolist (buffer (buffer-list))
+      (when (and (buffer-live-p buffer) (neoment--neoment-buffer-p buffer))
+        (set-buffer-modified-p nil)
+        (kill-buffer buffer))))
+  (neoment-ui-cancel-timer)
+  (run-at-time 0 nil (lambda () (setq neoment--quitting nil)))
+  (message "Neoment closed"))
+
 ;;;; Dispatcher and menu
 
 (defconst neoment-subcommands
@@ -96,6 +130,7 @@
     ("open_rooms" . neoment-pick-open-room)
     ("sync_start" . neoment-sync-start)
     ("sync_stop" . neoment-sync-stop)
+    ("quit" . neoment-quit)
     ("reload_config" . neoment-reload-config)
     ("clear" . neoment-clear-cache)
     ("toggle_rooms_list" . neoment-toggle-rooms-list)
@@ -118,7 +153,8 @@
     ("n" "Log in / toggle room list" neoment)
     ("L" "Log out" neoment-logout)
     ("s" "Start sync" neoment-sync-start)
-    ("S" "Stop sync" neoment-sync-stop)]
+    ("S" "Stop sync" neoment-sync-stop)
+    ("Q" "Quit Neoment" neoment-quit)]
    ["Rooms"
     ("j" "Join room, alias or user" neoment-join)
     ("f" "Pick a room" neoment-pick-room)

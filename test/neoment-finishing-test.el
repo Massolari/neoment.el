@@ -57,7 +57,8 @@
     (dolist (command '(neoment neoment-command neoment-menu neoment-join neoment-logout
                                neoment-pick-room neoment-pick-open-room neoment-sync-start
                                neoment-sync-stop neoment-reload-config neoment-clear-cache
-                               neoment-toggle-rooms-list neoment-notification-settings))
+                               neoment-toggle-rooms-list neoment-notification-settings
+                               neoment-quit))
       (should (member (symbol-name command) symbols)))))
 
 (provide 'neoment-finishing-test)

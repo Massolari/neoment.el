@@ -50,6 +50,7 @@ The session is saved and restored the next time you run `M-x neoment`.
 | `neoment-pick-open-room` | Pick one of the rooms open in buffers |
 | `neoment-sync-start` | Start the sync loop |
 | `neoment-sync-stop` | Stop the sync loop |
+| `neoment-quit` | Stop sync, timers and processes, kill all Neoment buffers and keep the session |
 | `neoment-reload-config` | Validate the options again |
 | `neoment-clear-cache` | Delete the room cache |
 | `neoment-toggle-rooms-list` | Show or hide the room list |
@@ -78,6 +79,7 @@ rebind with `keymap-set`, and `?` shows the bindings of the mode.
 | `M-n` | `neoment-notification-settings` |
 | `f` / `F` | `neoment-pick-room` / `neoment-pick-open-room` |
 | `q` | `neoment-toggle-rooms-list` |
+| `Q` | `neoment-rooms-quit` (asks, then runs `neoment-quit`) |
 
 ### Room and thread buffers (`neoment-room-mode-map`)
 

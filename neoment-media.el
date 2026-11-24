@@ -479,6 +479,18 @@ Return nil on success, or the error message."
      (emoticon
       (propertize (plist-get emoticon :title) 'face 'bold)))))
 
+(defun neoment-media-shutdown ()
+  "Cancel the popup timer and delete the mpv process and the popup buffers."
+  (when (timerp neoment-media--popup-timer)
+    (cancel-timer neoment-media--popup-timer))
+  (setq neoment-media--popup-timer nil)
+  (dolist (process (process-list))
+    (when (string-prefix-p "neoment-mpv" (process-name process))
+      (delete-process process)))
+  (dolist (name (list "*neoment-mpv*" neoment-media--posframe-buffer))
+    (when-let* ((buffer (get-buffer name)))
+      (kill-buffer buffer))))
+
 (defun neoment-media--hide-popup ()
   "Hide the popup."
   (when (and (featurep 'posframe) (get-buffer neoment-media--posframe-buffer))

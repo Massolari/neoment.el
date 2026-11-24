@@ -30,6 +30,17 @@
 - **WHEN** a UI render is scheduled and the user runs `neoment-quit`
 - **THEN** the render does not run afterwards and no buffer is recreated
 
+### Requirement: Quit from the room list
+Pressing `Q` in the room list SHALL ask `Quit Neoment? ` (default No) and run `neoment-quit` only on a yes. `neoment-quit` itself SHALL NOT ask.
+
+#### Scenario: Confirmed
+- **WHEN** the user presses `Q` in the room list and answers yes
+- **THEN** `neoment-quit` runs
+
+#### Scenario: Declined
+- **WHEN** the user presses `Q` in the room list and answers no
+- **THEN** `Operation canceled` is shown and sync, buffers and processes are left untouched
+
 ### Requirement: Quit command access
 `neoment-quit` SHALL be reachable from the Neoment menu and from the `neoment-command` subcommand `quit`.
 

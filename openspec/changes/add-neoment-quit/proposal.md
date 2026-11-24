@@ -10,6 +10,7 @@ Neoment has no way to shut itself down. To stop using it without logging out, th
 - Stop the sync loop (silently), cancel the UI render and media popup timers, and delete the Neoment helper processes (mpv playback, desktop notifications).
 - Kill every Neoment buffer without confirmation prompts, including compose buffers with unsent text.
 - Expose the command in the `neoment-menu` transient, the `neoment-command` subcommands (`quit`) and the README command table.
+- Bind `Q` in the room list to `neoment-rooms-quit`, which asks for confirmation before running `neoment-quit`.
 - Show `Neoment closed` when done.
 
 ## Capabilities
@@ -24,7 +25,7 @@ None.
 
 ## Impact
 
-- Code: `neoment.el` (command, menu, subcommand), small teardown helpers in `neoment-rooms.el` (UI timer), `neoment-media.el` (popup timer, mpv process), `neoment-notify.el` (notification process).
+- Code: `neoment.el` (command, menu, subcommand), small teardown helpers in `neoment-rooms.el` (UI timer, `Q` wrapper and key), `neoment-media.el` (popup timer, mpv process), `neoment-notify.el` (notification process).
 - Docs: `README.md` command table.
 - Tests: new ERT tests; `neoment-finishing-test.el` command list.
 - No new dependencies, no change to saved data.

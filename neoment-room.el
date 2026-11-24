@@ -60,8 +60,9 @@ nil means local time.")
   "Non-nil while a render must not mark the room as read.")
 
 (defvar neoment-room-image-function nil
-  "Function called to add inline images after a render.
-It is called in the room buffer with no argument.")
+  "Function called to add inline images during a render.
+It is called in the room buffer with no argument, after the text is
+inserted and before point and window starts are restored.")
 
 ;;;; Formatting helpers
 
@@ -402,8 +403,21 @@ With THREAD-ROOT-ID, render that thread instead."
 
 ;;;; Buffer
 
-(defvar-local neoment-room--zoomed nil
-  "Message ids whose inline image is zoomed.")
+(defvar-local neoment-room--image-heights nil
+  "Alist from message key to the max height of its inline image.
+The height is a fraction of the window height; a missing entry means
+the default size.")
+
+(defun neoment-room--image-position (key)
+  "Return the position of the image character of KEY's inline image, or nil."
+  (let ((pos (point-min))
+        (found nil))
+    (while (and (not found) (< pos (point-max)))
+      (let ((next (or (next-single-property-change pos 'neoment-image) (point-max))))
+        (when (equal (get-text-property pos 'neoment-image) key)
+          (setq found (1- next)))
+        (setq pos next)))
+    found))
 
 (defun neoment-room-buffer-name (room-id)
   "Return the buffer name of ROOM-ID."
@@ -510,8 +524,44 @@ DELETE is passed on to `buffer-substring--filter'."
 
 ;;;; Position-preserving render
 
+(defun neoment-room--text-length (start end)
+  "Return the number of characters between START and END outside inline images."
+  (let ((count 0)
+        (pos start))
+    (while (< pos end)
+      (let ((next (next-single-property-change pos 'neoment-image nil end)))
+        (unless (get-text-property pos 'neoment-image)
+          (setq count (+ count (- next pos))))
+        (setq pos next)))
+    count))
+
+(defun neoment-room--text-line-number (pos)
+  "Return the line number of POS, leaving out inline image lines."
+  (save-excursion
+    (goto-char pos)
+    (let ((target (line-beginning-position))
+          (line 1))
+      (goto-char (point-min))
+      (while (and (< (point) target) (zerop (forward-line 1)))
+        (unless (get-text-property (point) 'neoment-image)
+          (setq line (1+ line))))
+      line)))
+
+(defun neoment-room--text-line-position (line)
+  "Return the start of LINE, counted as `neoment-room--text-line-number' does."
+  (save-excursion
+    (goto-char (point-min))
+    (let ((remaining (1- line)))
+      (while (and (> remaining 0) (zerop (forward-line 1)))
+        (unless (get-text-property (point) 'neoment-image)
+          (setq remaining (1- remaining)))))
+    (point)))
+
 (defun neoment-room--position-anchor (pos)
-  "Return (KEY . OFFSET) locating POS by its message, or (nil . LINE)."
+  "Return (KEY OFFSET IMAGE-P) locating POS by its message, or (nil . LINE).
+LINE leaves out inline image lines, see `neoment-room--text-line-number'.
+OFFSET counts the characters of the message before POS, leaving out
+inline image text.  IMAGE-P is non-nil when POS is on an image line."
   (let ((key (get-text-property pos 'neoment-message)))
     (if key
         (let ((start (or (previous-single-property-change (1+ pos) 'neoment-message)
@@ -520,21 +570,41 @@ DELETE is passed on to `buffer-substring--filter'."
                       (equal (get-text-property (1- start) 'neoment-message) key))
             (setq start (or (previous-single-property-change start 'neoment-message)
                             (point-min))))
-          (cons key (- pos start)))
-      (cons nil (save-excursion (goto-char pos) (line-number-at-pos))))))
+          (list key (neoment-room--text-length start pos)
+                (save-excursion
+                  (goto-char pos)
+                  (and (get-text-property (line-beginning-position) 'neoment-image) t))))
+      (cons nil (neoment-room--text-line-number pos)))))
 
 (defun neoment-room--anchor-position (anchor)
-  "Return the buffer position of ANCHOR, see `neoment-room--position-anchor'."
+  "Return the buffer position of ANCHOR, see `neoment-room--position-anchor'.
+An anchor on an image line resolves to that image when it is shown."
   (if (car anchor)
-      (let ((pos (text-property-any (point-min) (point-max) 'neoment-message (car anchor))))
-        (if pos
-            (let ((end (or (next-single-property-change pos 'neoment-message) (point-max))))
-              (min (+ pos (cdr anchor)) (max pos (1- end))))
-          (point-max)))
-    (save-excursion
-      (goto-char (point-min))
-      (forward-line (1- (cdr anchor)))
-      (point))))
+      (let* ((key (car anchor))
+             (pos (text-property-any (point-min) (point-max) 'neoment-message key)))
+        (cond
+         ((null pos) (point-max))
+         ((and (nth 2 anchor) (neoment-room--image-position key)))
+         (t
+          (let ((end (or (next-single-property-change pos 'neoment-message) (point-max)))
+                (target pos)
+                (remaining (nth 1 anchor)))
+            (while (and (> remaining 0) (< target end))
+              (unless (get-text-property target 'neoment-image)
+                (setq remaining (1- remaining)))
+              (setq target (1+ target)))
+            (min target (max pos (1- end)))))))
+    (neoment-room--text-line-position (cdr anchor))))
+
+(defun neoment-room--start-position (anchor)
+  "Return the window start position of ANCHOR.
+An anchor on an image line starts at a line start, whether the image is
+still shown or not."
+  (let ((pos (neoment-room--anchor-position anchor)))
+    (if (or (get-text-property pos 'neoment-image)
+            (and (car anchor) (nth 2 anchor)))
+        (save-excursion (goto-char pos) (line-beginning-position))
+      pos)))
 
 (defun neoment-room-render-buffer ()
   "Re-render the current room buffer, keeping point and window starts."
@@ -555,12 +625,14 @@ DELETE is passed on to `buffer-substring--filter'."
         (neoment-room-mark-read neoment--room-id))
       (erase-buffer)
       (insert (neoment-room-render neoment--room-id neoment--thread-root-id))
+      ;; Cached images are placed now, so anchors can land on them.
+      (when neoment-room-image-function
+        (with-demoted-errors "neoment: inline images failed: %S"
+          (funcall neoment-room-image-function)))
       (goto-char (neoment-room--anchor-position point-anchor))
       (pcase-dolist (`(,w ,pt ,start) window-anchors)
-        (set-window-start w (neoment-room--anchor-position start) t)
-        (set-window-point w (neoment-room--anchor-position pt)))
-      (when neoment-room-image-function
-        (funcall neoment-room-image-function)))))
+        (set-window-start w (neoment-room--start-position start) t)
+        (set-window-point w (neoment-room--anchor-position pt))))))
 
 (defun neoment-room-refresh (room-id)
   "Schedule a re-render of every buffer of ROOM-ID."

@@ -8,11 +8,11 @@ The markdown rendering change hid link URLs and put them in the link's `help-ech
 
 - When the cursor rests on a link in a room or thread buffer, after the usual hover delay (about 0.5 s), the echo area shows the link's URL. This works the same in GUI and terminal frames.
 - The URL is always shown in the echo area, never in the posframe popup. Links are text, and the echo area is where Emacs shows "where does this go".
-- Spoiler links show nothing, so the spoiler isn't revealed. `o` still reveals it.
+- Spoiler links show nothing, so the spoiler isn't revealed just by moving the cursor across it. Pressing `o` on a spoiler still shows its content in the echo area, as it does today.
 - Mention links (`matrix.to` user URLs) and `img:` emoticons keep their current behaviour. Mentions show their URL like any link. Emoticons keep their title/image popup.
 - The mouse tooltip (`help-echo`) stays.
 
-Assumption: "displaying the URL in the echo area" means seeing it when the cursor rests on the link, not only on mouse hover. No code change is needed for the mouse case.
+Confirmed with the user: they use only the keyboard, so the URL must appear when the cursor rests on a link. Mouse hover is not enough.
 
 ## Capabilities
 

@@ -340,6 +340,9 @@ room changed."
          ((null target)
           (neoment-events--add-pending room target-id event)
           nil)
+         ;; A redacted message keeps its redaction text, whatever order
+         ;; the edit and the redaction arrive in.
+         ((neoment-message-was-redacted target) nil)
          ((and (neoment-message-edit-data target)
                (>= (plist-get (neoment-message-edit-data target) :timestamp)
                    event-ts))

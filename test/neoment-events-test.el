@@ -354,6 +354,34 @@
                                                     :content '((redacts . "$ed"))))
     (should-not (neoment-room-get-message room "$m2"))))
 
+(ert-deftest neoment-events-edit-after-redaction ()
+  (neoment-events-test
+    (neoment-events-handle-multiple room (list (neoment-events-test-text "secret" :id "$s" :ts 1)))
+    (neoment-events-handle room (neoment-test-event "m.room.redaction" :id "$x" :ts 2
+                                                    :content '((redacts . "$s"))))
+    ;; An edit handled after the redaction does not bring the text back.
+    (should-not (neoment-events-handle room (neoment-events-test-edit "$e" "$s" "secret2" 3)))
+    (let ((m (neoment-room-get-message room "$s")))
+      (should (equal (neoment-message-content m) "[Redacted]"))
+      (should (neoment-message-was-redacted m))
+      (should (equal (neoment-message-id m) "$s"))
+      (should-not (neoment-message-edit-data m)))))
+
+(ert-deftest neoment-events-pending-redaction-then-history-edit ()
+  (neoment-events-test
+    ;; The redaction arrives through sync before its target is known.
+    (neoment-events-handle room (neoment-test-event "m.room.redaction" :id "$x" :ts 30
+                                                    :content '((redacts . "$s"))))
+    (should (gethash "$s" (neoment-room-pending-events room)))
+    ;; A history page then delivers the original and its later edit.
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-text "secret" :id "$s" :ts 10)
+                (neoment-events-test-edit "$e" "$s" "secret2" 20))
+     t)
+    (let ((m (neoment-room-get-message room "$s")))
+      (should (equal (neoment-message-content m) "[Redacted]"))
+      (should (neoment-message-was-redacted m)))))
+
 (ert-deftest neoment-events-reactions-two-users ()
   (neoment-events-test
     (neoment-events-handle-multiple

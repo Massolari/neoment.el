@@ -1,7 +1,7 @@
 # Tasks
 
 Notes: this change has no `design.md`. The approach is a three-level rank inside `neoment-rooms--activity<` (`neoment-rooms.el:113`):
-- 0: the room has counts, using the existing `neoment-rooms--has-counts`. This is the same test that decides the badge and the unread line face, so the order matches what the user sees.
+- 0: the room has counts, using the existing `neoment-rooms--has-counts`. This is the same test that decides the unread line face, so the order matches what the user sees.
 - 1: `neoment-room-unread-p`.
 - 2: read.
 
@@ -22,6 +22,11 @@ Compare ranks first and timestamps second. A room with counts is ranked 0 even i
 ## 2. Integration checks
 
 - [x] 2.1 Run `make compile lint test` and confirm that all three pass with no byte-compile warnings.
+
+## 3. Review follow-ups
+
+- [x] 3.1 Add a delta spec scenario for a room with counts whose `neoment-room-unread-p` is nil (ranked first).
+- [x] 3.2 In `neoment-rooms-toggle-read`, set the highlight and notification counts to 0 when the read receipt succeeds, so the room leaves the top group without waiting for the next sync. Add tests for success (counts cleared) and failure (counts kept), and the modified **Toggle read state** requirement to the delta spec.
 
 ## Workflow follow-up
 

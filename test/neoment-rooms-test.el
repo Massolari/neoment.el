@@ -181,6 +181,25 @@ PROPS: :ago (minutes since activity), :fav, :direct, :low, :unread,
     (should (equal (mapcar #'neoment-room-id (alist-get 'rooms (neoment-rooms--classify nil)))
                    '("!b:s" "!a:s")))))
 
+(ert-deftest neoment-rooms-mark-read-clears-counts ()
+  (neoment-rooms-test
+    (neoment-rooms-test-room "!r:s" "dev" :ago 60 :notifications 1 :highlights 1)
+    (neoment-test-with-http (lambda (_) '(:ok nil))
+      (neoment-rooms-test-at "dev 1h"
+        (neoment-rooms-toggle-read)))
+    (let ((room (neoment-get-room "!r:s")))
+      (should (equal (neoment-room-unread-highlights room) 0))
+      (should (equal (neoment-room-unread-notifications room) 0))
+      (should-not (neoment-rooms--has-counts room)))))
+
+(ert-deftest neoment-rooms-mark-read-failure-keeps-counts ()
+  (neoment-rooms-test
+    (neoment-rooms-test-room "!r:s" "dev" :ago 60 :notifications 1)
+    (neoment-test-with-http (lambda (_) '(:error (:status 500)))
+      (neoment-rooms-test-at "dev 1h"
+        (neoment-rooms-toggle-read)))
+    (should (neoment-rooms--has-counts (neoment-get-room "!r:s")))))
+
 (ert-deftest neoment-rooms-header-face-and-blank-lines ()
   (neoment-rooms-test
     (let* ((text (neoment-rooms-test-render))

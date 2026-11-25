@@ -725,6 +725,10 @@ Show a message and return nil when there is none, unless SILENT."
                        (neoment-notify--error
                         (format "Failed to mark room '%s' as read: %s" name
                                 (neoment-http-error-message (plist-get result :error))))
+                     ;; Clear the counts now so the room leaves the top of
+                     ;; its section without waiting for the next sync.
+                     (setf (neoment-room-unread-highlights room) 0
+                           (neoment-room-unread-notifications room) 0)
                      (neoment-rooms-refresh)
                      (neoment-notify--message
                       (format "Room '%s' marked as read" name))))))

@@ -59,11 +59,12 @@
   (messages (make-hash-table :test 'equal))
   prev-batch                            ; nil, a token string, or `end'
   last-activity                         ; plist (:timestamp :event-id :age)
+  unread-activity                       ; plist (:timestamp :event-id :age)
   is-direct is-favorite is-lowpriority
   space-rooms typing fully-read
   (unread-notifications 0) (unread-highlights 0)
   joined-member-count unread
-  read-receipt                          ; plist (:event-id :ts :is-local)
+  read-receipt                          ; plist (:event-id :ts :event-ts :is-local)
   avatar-url is-tracked
   summary                               ; plist (:heroes :joined :invited)
   (sender-faces (make-hash-table :test 'equal)))
@@ -246,16 +247,28 @@ An untracked room only keeps its newest non-state message."
   (or (plist-get (neoment-message-edit-data message) :id)
       (neoment-message-id message)))
 
+(defun neoment-room--activity-newer-p (activity timestamp age)
+  "Return non-nil when TIMESTAMP and AGE are newer than ACTIVITY.
+Newer means a greater timestamp, or an equal one with a smaller age."
+  (let ((last-ts (or (plist-get activity :timestamp) 0))
+        (last-age (or (plist-get activity :age) 0)))
+    (or (< last-ts timestamp)
+        (and activity (= last-ts timestamp) (> last-age (or age 0))))))
+
 (defun neoment-room-set-last-activity (room timestamp event-id age)
   "Update the last activity of ROOM with TIMESTAMP, EVENT-ID and AGE."
-  (let* ((last (neoment-room-last-activity room))
-         (last-ts (or (plist-get last :timestamp) 0))
-         (last-age (or (plist-get last :age) 0))
-         (age (or age 0)))
-    (when (or (< last-ts timestamp)
-              (and last (= last-ts timestamp) (> last-age age)))
-      (setf (neoment-room-last-activity room)
-            (list :timestamp timestamp :event-id event-id :age age)))))
+  (when (neoment-room--activity-newer-p (neoment-room-last-activity room)
+                                        timestamp age)
+    (setf (neoment-room-last-activity room)
+          (list :timestamp timestamp :event-id event-id :age (or age 0)))))
+
+(defun neoment-room-set-unread-activity (room timestamp event-id age)
+  "Update the unread activity of ROOM with TIMESTAMP, EVENT-ID and AGE.
+Unread activity is the newest main-timeline message from another user."
+  (when (neoment-room--activity-newer-p (neoment-room-unread-activity room)
+                                        timestamp age)
+    (setf (neoment-room-unread-activity room)
+          (list :timestamp timestamp :event-id event-id :age (or age 0)))))
 
 ;;;; Display names and presence
 
@@ -416,14 +429,40 @@ An unknown name is fetched in the background."
                               (neoment-rooms)))
           (mapcar #'neoment-invited-room-id (neoment-invited-rooms))))
 
+(defun neoment-room-event-timestamp (room id)
+  "Return the timestamp of the event ID in ROOM, or nil when not loaded.
+Look in the raw events table first, which holds edit events under their
+own id, then in the messages."
+  (when id
+    (or (alist-get 'origin_server_ts (gethash id (neoment-room-events room)))
+        (when-let* ((message (neoment-room-find-message room id)))
+          (neoment-message-timestamp message)))))
+
+(defun neoment-room--marker-covers-p (room activity id fallback-ts)
+  "Return non-nil when the marker on event ID is at or after ACTIVITY.
+ACTIVITY is a plist (:timestamp :event-id :age) of ROOM.  When the event
+of ID is not loaded, compare FALLBACK-TS instead, if non-nil."
+  (and id
+       (or (equal id (plist-get activity :event-id))
+           (let ((ts (or (neoment-room-event-timestamp room id) fallback-ts))
+                 (activity-ts (plist-get activity :timestamp)))
+             (and (numberp ts) (numberp activity-ts) (>= ts activity-ts))))))
+
 (defun neoment-room-unread-p (room)
-  "Return non-nil when ROOM is unread."
+  "Return non-nil when ROOM is unread.
+ROOM is unread when marked so, or when it has unread activity and neither
+its read receipt nor its fully read marker is at or after it.  When the
+receipt's event is not loaded, use the event timestamp recorded with the
+receipt, else the time the receipt was sent."
   (or (eq (neoment-room-unread room) t)
-      (let ((last-id (plist-get (neoment-room-last-activity room) :event-id)))
-        (and last-id
-             (not (equal last-id
-                         (plist-get (neoment-room-read-receipt room) :event-id)))
-             (not (equal last-id (neoment-room-fully-read room)))))))
+      (let ((activity (neoment-room-unread-activity room))
+            (receipt (neoment-room-read-receipt room)))
+        (and (plist-get activity :event-id)
+             (not (neoment-room--marker-covers-p
+                   room activity (plist-get receipt :event-id)
+                   (or (plist-get receipt :event-ts) (plist-get receipt :ts))))
+             (not (neoment-room--marker-covers-p
+                   room activity (neoment-room-fully-read room) nil))))))
 
 (defun neoment-room-set-read-receipt (room receipt)
   "Set the read RECEIPT of ROOM.

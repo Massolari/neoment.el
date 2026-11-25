@@ -184,6 +184,31 @@ instead of running."
           (should (= (neoment-room-joined-member-count room) 3)))
         (should (equal calls '((0 0 2 0))))))))
 
+(defun neoment-sync-test-thread-reply-sync (limited)
+  "Return a sync with one thread reply in !r:s, LIMITED or not."
+  (neoment-json-decode
+   (format "{\"rooms\":{\"join\":{\"!r:s\":{\"timeline\":{\"limited\":%s,
+      \"events\":[{\"type\":\"m.room.message\",\"event_id\":\"$r\",
+        \"sender\":\"@bob:s\",\"origin_server_ts\":20,
+        \"content\":{\"msgtype\":\"m.text\",\"body\":\"reply\",
+          \"m.relates_to\":{\"rel_type\":\"m.thread\",\"event_id\":\"$root\"}}}]}}}}}"
+           (if limited "true" "false"))))
+
+(ert-deftest neoment-sync-limited-thread-reply-marks-unread ()
+  (neoment-sync-test (lambda (_) 'pending)
+    (neoment-sync-process (neoment-sync-test-thread-reply-sync t))
+    (let ((room (neoment-has-room "!r:s")))
+      (should (equal (plist-get (neoment-room-unread-activity room) :event-id) "$r"))
+      (should (neoment-room-unread-p room)))))
+
+(ert-deftest neoment-sync-thread-reply-without-gap-stays-read ()
+  (neoment-sync-test (lambda (_) 'pending)
+    (neoment-sync-process (neoment-sync-test-thread-reply-sync nil))
+    (let ((room (neoment-has-room "!r:s")))
+      (should (equal (plist-get (neoment-room-last-activity room) :event-id) "$r"))
+      (should-not (neoment-room-unread-activity room))
+      (should-not (neoment-room-unread-p room)))))
+
 (ert-deftest neoment-sync-heroes-name ()
   (neoment-sync-test (lambda (_) 'pending)
     (neoment-set-display-name "@alice:s" "Alice" 1)

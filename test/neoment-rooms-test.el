@@ -45,7 +45,8 @@ PROPS: :ago (minutes since activity), :fav, :direct, :low, :unread,
     (when (plist-member props :ago)
       (let ((ts (truncate (* 1000 (- neoment-rooms-test-now
                                      (* 60 (plist-get props :ago)))))))
-        (setf (neoment-room-last-activity room) (list :timestamp ts :event-id (concat "$" id) :age 0))
+        (setf (neoment-room-last-activity room) (list :timestamp ts :event-id (concat "$" id) :age 0)
+              (neoment-room-unread-activity room) (list :timestamp ts :event-id (concat "$" id) :age 0))
         (setf (neoment-room-fully-read room)
               (if (plist-get props :unread) "$other" (concat "$" id)))))
     (setf (neoment-room-is-favorite room) (plist-get props :fav)
@@ -250,6 +251,54 @@ PROPS: :ago (minutes since activity), :fav, :direct, :low, :unread,
       (should (equal (neoment-rooms--badge r) (cons "•" 'neoment-notification-dot)))
       (setf (neoment-room-last-activity r) nil)
       (should-not (neoment-rooms--badge r)))))
+
+;;;; Issue #7: plain unread false positives
+
+(defun neoment-rooms-test-order ()
+  "Return the ids of the rooms group in display order."
+  (mapcar #'neoment-room-id (alist-get 'rooms (neoment-rooms--classify nil))))
+
+(defun neoment-rooms-test-now-ms ()
+  "Return the test's current time in milliseconds."
+  (truncate (* 1000 neoment-rooms-test-now)))
+
+(ert-deftest neoment-rooms-receipt-moved-to-later-event-is-read ()
+  (neoment-rooms-test
+    (neoment-rooms-test-room "!old:s" "Old" :ago 60 :unread t)
+    (neoment-rooms-test-room "!recent:s" "Recent" :ago 1)
+    (let ((r (neoment-rooms-test-room "!a:s" "A" :ago 5 :unread t)))
+      (should (equal (neoment-rooms--badge r) (cons "•" 'neoment-notification-dot)))
+      (should (equal (neoment-rooms-test-order) '("!a:s" "!old:s" "!recent:s")))
+      ;; Another client put the receipt on a later event this room never loaded.
+      (setf (neoment-room-read-receipt r)
+            (list :event-id "$later-state" :ts (neoment-rooms-test-now-ms)))
+      (should-not (neoment-rooms--badge r))
+      (should (equal (neoment-rooms-test-order) '("!old:s" "!recent:s" "!a:s"))))))
+
+(ert-deftest neoment-rooms-own-message-is-read ()
+  (neoment-rooms-test
+    (let ((r (neoment-rooms-test-room "!a:s" "A" :ago 5)))
+      (neoment-events-handle
+       r (neoment-test-event "m.room.message" :id "$mine" :sender "@me:s"
+                             :ts (neoment-rooms-test-now-ms)
+                             :content '((msgtype . "m.text") (body . "hi"))))
+      (should (equal (plist-get (neoment-room-last-activity r) :event-id) "$mine"))
+      (should-not (neoment-room-unread-p r))
+      (should-not (neoment-rooms--badge r)))))
+
+(ert-deftest neoment-rooms-thread-reply-is-read-but-moves-up ()
+  (neoment-rooms-test
+    (neoment-rooms-test-room "!b:s" "B" :ago 1)
+    (let ((r (neoment-rooms-test-room "!a:s" "A" :ago 5)))
+      (should (equal (neoment-rooms-test-order) '("!b:s" "!a:s")))
+      (neoment-events-handle
+       r (neoment-test-event "m.room.message" :id "$reply" :sender "@alice:s"
+                             :ts (neoment-rooms-test-now-ms)
+                             :content '((msgtype . "m.text") (body . "reply")
+                                        (m.relates_to . ((rel_type . "m.thread")
+                                                         (event_id . "$root"))))))
+      (should-not (neoment-rooms--badge r))
+      (should (equal (neoment-rooms-test-order) '("!a:s" "!b:s"))))))
 
 (ert-deftest neoment-rooms-buffer-and-space-suffix ()
   (neoment-rooms-test

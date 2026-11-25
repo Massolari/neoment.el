@@ -110,12 +110,24 @@ The leading space hides it from `switch-to-buffer' and buffer lists.")
       (neoment-invited-room-id room)
     (neoment-room-id room)))
 
+(defun neoment-rooms--attention-rank (room)
+  "Return how much ROOM needs attention, lower first.
+0 when ROOM has unread highlights or notifications, 1 when it is
+otherwise unread, 2 when it is read."
+  (cond
+   ((neoment-rooms--has-counts room) 0)
+   ((neoment-room-unread-p room) 1)
+   (t 2)))
+
 (defun neoment-rooms--activity< (a b)
-  "Return non-nil when room A sorts before room B by activity."
-  (let ((ua (neoment-room-unread-p a))
-        (ub (neoment-room-unread-p b)))
-    (if (not (eq (and ua t) (and ub t)))
-        ua
+  "Return non-nil when room A sorts before room B by activity.
+Rooms with unread highlights or notifications come first, then
+other unread rooms, then read rooms.  Within each group the most
+recent activity comes first."
+  (let ((ra (neoment-rooms--attention-rank a))
+        (rb (neoment-rooms--attention-rank b)))
+    (if (/= ra rb)
+        (< ra rb)
       (> (or (plist-get (neoment-room-last-activity a) :timestamp) 0)
          (or (plist-get (neoment-room-last-activity b) :timestamp) 0)))))
 
@@ -713,6 +725,10 @@ Show a message and return nil when there is none, unless SILENT."
                        (neoment-notify--error
                         (format "Failed to mark room '%s' as read: %s" name
                                 (neoment-http-error-message (plist-get result :error))))
+                     ;; Clear the counts now so the room leaves the top of
+                     ;; its section without waiting for the next sync.
+                     (setf (neoment-room-unread-highlights room) 0
+                           (neoment-room-unread-notifications room) 0)
                      (neoment-rooms-refresh)
                      (neoment-notify--message
                       (format "Room '%s' marked as read" name))))))

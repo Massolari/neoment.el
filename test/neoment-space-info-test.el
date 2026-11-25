@@ -238,6 +238,9 @@
               (should (eq (window-buffer room-window) room-buffer))))
         (kill-buffer room-buffer)))))
 
+;; Regression guard: a window that already existed must survive `q'.
+;; The frame is split so that a quit which deletes the selected window
+;; (for example `kill-buffer-and-window') would be able to and fail here.
 (ert-deftest neoment-room-info-quit-existing-window ()
   (neoment-space-test
     (setf (neoment-room-name (neoment-get-room "!r:s")) "dev")
@@ -245,6 +248,7 @@
       (unwind-protect
           (save-window-excursion
             (delete-other-windows)
+            (split-window-right)
             (switch-to-buffer scratch)
             (let* ((window (selected-window))
                    (count (length (window-list)))
@@ -254,6 +258,7 @@
               (should-not (buffer-live-p buffer))
               (should (= (length (window-list)) count))
               (should (window-live-p window))
+              (should (eq (selected-window) window))
               (should (eq (window-buffer window) scratch))))
         (kill-buffer scratch)))))
 

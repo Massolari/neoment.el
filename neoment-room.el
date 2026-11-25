@@ -150,6 +150,10 @@ inserted and before point and window starts are restored.")
   "Return NAME truncated and right-aligned in the name column.
 Width is measured with `string-width', and truncation keeps whole
 glyphs, so composed emoji are neither split nor miscounted."
+  ;; Far more than 19 columns needs; bounds the cost of hostile names
+  ;; made of thousands of zero-width characters.
+  (when (> (length name) 200)
+    (setq name (substring name 0 200)))
   (when (> (string-width name) neoment-room-name-width)
     ;; Walk composed glyphs by hand: `string-glyph-split' can loop
     ;; forever on an emoji sequence followed by more text.

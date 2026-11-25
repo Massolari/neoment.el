@@ -35,4 +35,4 @@
 ## Risks / Trade-offs
 
 - [`string-width` may not match what a given font actually draws for some emoji] → Alignment could be off by a column in that font, but no error can happen because of the clamp. This is acceptable and already true today for short names.
-- [Splitting on every long header costs time] → Only names wider than 19 columns are split, and names are short, so the cost is negligible.
+- [Walking glyphs on every long header costs time] → Only names wider than 19 columns are walked, and names are first clipped to 200 characters, so a hostile display name of thousands of zero-width characters can't make each header render slow.

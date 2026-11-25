@@ -150,7 +150,7 @@
 The result must be 19 columns wide, and its visible part a prefix of
 NAME that ends on a glyph boundary."
   (let* ((result (neoment-room--pad-name name))
-         (visible (string-trim-left result " "))
+         (visible (string-trim-left result " +"))
          (end (length visible))
          (comp (and (> end 0)
                     (find-composition-internal (1- end) end name nil))))
@@ -188,6 +188,11 @@ NAME that ends on a glyph boundary."
   (dolist (name '("Alice 👍🏽 Wonderland Smith" "👨‍👩‍👧 Alice Wonderland Smith"
                   "🇧🇷 Alice Wonderland Smith"))
     (neoment-room-test-check-pad-name name))
+  ;; Huge names of zero-width characters are clipped before measuring.
+  (let ((result (neoment-room--pad-name
+                 (concat (make-string 100000 #x200b) "ABC"))))
+    (should (= (string-width result) 19))
+    (should (= (length result) (+ 19 200))))
   ;; Plain ASCII keeps its first 19 characters.
   (should (equal (neoment-room-test-check-pad-name "ABCDEFGHIJKLMNOPQRSTUVWXY")
                  "ABCDEFGHIJKLMNOPQRS")))

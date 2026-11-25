@@ -24,5 +24,5 @@ _None._
 
 - `neoment-room.el`: `neoment-room--pad-name` (only caller of the faulty arithmetic). All other `make-string` call sites were checked and are already clamped or use constants.
 - `test/neoment-room-test.el`: new regression tests.
-- No API, dependency, or data changes. `string-glyph-split` is available from Emacs 29.1, the package's minimum version.
+- No API, dependency, or data changes. `find-composition-internal` and `string-width` with FROM/TO are available in Emacs 29.1, the package's minimum version.
 - Out of scope: `neoment-rooms--truncate` in `neoment-rooms.el` has the same counting mismatch, but it only appends "…" and never pads, so it can overflow by a few columns but cannot raise this error.

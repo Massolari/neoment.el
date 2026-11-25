@@ -25,10 +25,11 @@
 
 ## Decisions
 
-1. **Truncate by glyphs, measured with `string-width`.** Split the name with `string-glyph-split` (Emacs 29.1, the package floor) and keep adding whole glyphs while `(string-width acc)` stays ≤ 19. This uses the same width function as the padding arithmetic, so the two can't disagree, and a cluster is never cut.
+1. **Truncate by glyphs, measured with `string-width`.** Walk the name glyph by glyph, finding each composed glyph's end with `find-composition-internal` (always advancing at least one character), and keep a running total of each glyph's `string-width` while it stays ≤ 19; then take one `substring`. This uses the same width function as the padding arithmetic, so the two can't disagree, a cluster is never cut, and the cost is linear in the name's length.
+   - *Alternative:* `string-glyph-split`. Rejected: it loops forever when a multi-codepoint emoji (VS16, skin tone, flag, ZWJ) is followed by more text, because its composition lookup can return a glyph ending at the current position.
    - *Alternative:* keep `truncate-string-to-width`, then drop characters from the end while `string-width` > 19. Rejected because dropping characters can leave a stray ZWJ or variation selector, giving broken glyphs.
    - *Alternative:* `string-pixel-width`. Rejected: it needs a window and font, depends on the display, and doesn't work in batch tests or terminals.
-   - *Fast path:* when `(string-width name)` ≤ 19 already, use the name unchanged. This avoids splitting on every header and keeps ASCII output identical.
+   - *Fast path:* when `(string-width name)` ≤ 19 already, use the name unchanged. This avoids walking glyphs on every header and keeps ASCII output identical.
 2. **Clamp the padding with `(max 0 …)`** as a safety net, matching the guard every other `make-string` call site in the codebase already uses (`neoment-room--rule`, `neoment-rooms--title-line`, `neoment-room-info--title`).
 
 ## Risks / Trade-offs

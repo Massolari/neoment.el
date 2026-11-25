@@ -151,14 +151,23 @@ inserted and before point and window starts are restored.")
 Width is measured with `string-width', and truncation keeps whole
 glyphs, so composed emoji are neither split nor miscounted."
   (when (> (string-width name) neoment-room-name-width)
-    (let ((kept ""))
+    ;; Walk composed glyphs by hand: `string-glyph-split' can loop
+    ;; forever on an emoji sequence followed by more text.
+    (let ((len (length name))
+          (pos 0)
+          (width 0))
       (catch 'full
-        (dolist (glyph (string-glyph-split name))
-          (let ((next (concat kept glyph)))
-            (if (> (string-width next) neoment-room-name-width)
-                (throw 'full nil)
-              (setq kept next)))))
-      (setq name kept)))
+        (while (< pos len)
+          (let* ((comp (find-composition-internal pos (1+ pos) name nil))
+                 (next (if (and comp (= (car comp) pos) (> (cadr comp) pos))
+                           (cadr comp)
+                         (1+ pos)))
+                 (glyph-width (string-width name pos next)))
+            (when (> (+ width glyph-width) neoment-room-name-width)
+              (throw 'full nil))
+            (setq width (+ width glyph-width)
+                  pos next))))
+      (setq name (substring name 0 pos))))
   (concat (make-string (max 0 (- neoment-room-name-width (string-width name))) ?\s)
           name))
 

@@ -148,13 +148,15 @@
 (defun neoment-room-test-check-pad-name (name)
   "Check `neoment-room--pad-name' on NAME and return the visible part.
 The result must be 19 columns wide, and its visible part a prefix of
-NAME's whole glyphs."
+NAME that ends on a glyph boundary."
   (let* ((result (neoment-room--pad-name name))
          (visible (string-trim-left result " "))
-         (glyphs (string-glyph-split name)))
+         (end (length visible))
+         (comp (and (> end 0)
+                    (find-composition-internal (1- end) end name nil))))
     (should (= (string-width result) 19))
-    (should (equal (string-glyph-split visible)
-                   (seq-take glyphs (length (string-glyph-split visible)))))
+    (should (string-prefix-p visible name))
+    (should (or (null comp) (<= (cadr comp) end)))
     visible))
 
 (ert-deftest neoment-room-pad-name-display-width ()
@@ -180,6 +182,12 @@ NAME's whole glyphs."
   (let ((visible (neoment-room-test-check-pad-name
                   (apply #'concat (make-list 12 "👨‍👩‍👧‍👦")))))
     (should (string-suffix-p "👨‍👩‍👧‍👦" visible)))
+  ;; Emoji sequences followed by text (`string-glyph-split' hangs here).
+  (should (equal (neoment-room-test-check-pad-name "❤️ Alice Wonderland Smith")
+                 "❤️ Alice Wonderland"))
+  (dolist (name '("Alice 👍🏽 Wonderland Smith" "👨‍👩‍👧 Alice Wonderland Smith"
+                  "🇧🇷 Alice Wonderland Smith"))
+    (neoment-room-test-check-pad-name name))
   ;; Plain ASCII keeps its first 19 characters.
   (should (equal (neoment-room-test-check-pad-name "ABCDEFGHIJKLMNOPQRSTUVWXY")
                  "ABCDEFGHIJKLMNOPQRS")))

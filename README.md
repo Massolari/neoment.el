@@ -107,6 +107,11 @@ rebind with `keymap-set`, and `?` shows the bindings of the mode.
 | `f` / `F` / `l` | room pickers and `neoment-toggle-rooms-list` |
 | `q` / `g` | `neoment-room-quit` / `revert-buffer` |
 
+Resting the cursor for half a second on a reaction or an emoticon shows a popup with its name
+(and who reacted). The popup uses `posframe` in GUI frames and the echo area otherwise. On a
+link, the echo area shows the link's URL, in GUI and terminal frames. Spoilers show nothing
+until you press `o`. Mouse hover still shows the URL as a tooltip.
+
 ### Audio player (`*neoment-player*`)
 
 Opening an audio attachment with `o` plays it with `mpv` (Windows and systems without `mpv`

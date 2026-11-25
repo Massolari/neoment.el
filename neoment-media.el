@@ -654,6 +654,14 @@ Return nil on success, or the error message."
      (emoticon
       (propertize (plist-get emoticon :title) 'face 'bold)))))
 
+(defun neoment-media-link-echo-text (props)
+  "Return the URL to show in the echo area for the text PROPS at point, or nil.
+Spoilers return nil so that their hidden text is never shown, and
+emoticons return nil because they have their own popup."
+  (unless (or (plist-get props 'neoment-spoiler)
+              (plist-get props 'neoment-emoticon))
+    (plist-get props 'neoment-link)))
+
 (defun neoment-media-shutdown ()
   "Cancel the popup timer and delete the mpv process and the popup buffers."
   (when (timerp neoment-media--popup-timer)
@@ -672,11 +680,19 @@ Return nil on success, or the error message."
     (posframe-hide neoment-media--posframe-buffer)))
 
 (defun neoment-media--show-popup (buffer pos)
-  "Show the popup for POS in BUFFER if point is still there."
+  "Show the popup for POS in BUFFER if point is still there.
+Reactions and emoticons get a posframe popup in GUI frames and the
+echo area otherwise.  On a link, the echo area shows its URL, not
+logged to *Messages* and not while the minibuffer is active; spoilers
+show nothing."
   (setq neoment-media--popup-timer nil)
   (when (and (buffer-live-p buffer) (eq buffer (current-buffer)) (= (point) pos))
     (let* ((props (text-properties-at pos))
-           (text (neoment-media-popup-text props)))
+           (text (neoment-media-popup-text props))
+           (url (and (not text) (neoment-media-link-echo-text props))))
+      (when (and url (not (active-minibuffer-window)))
+        (let ((message-log-max nil))
+          (message "%s" url)))
       (when text
         (setq neoment-media--popup-pos pos)
         (if (and (display-graphic-p) (require 'posframe nil t))

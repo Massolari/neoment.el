@@ -857,5 +857,84 @@ Downloads write \"data\" to the requested output file."
           (neoment-media--show-popup (current-buffer) 1))
         (should (equal (substring-no-properties shown) "custom\n\nAlice"))))))
 
+;;;; Link URL at point
+
+(ert-deftest neoment-media-link-echo-text ()
+  (should (equal (neoment-media-link-echo-text '(neoment-link "https://example.org"))
+                 "https://example.org"))
+  (should (equal (neoment-media-link-echo-text '(neoment-link "https://matrix.to/#/@alice:s"))
+                 "https://matrix.to/#/@alice:s"))
+  (should-not (neoment-media-link-echo-text '(neoment-link "the end" neoment-spoiler t)))
+  (should-not (neoment-media-link-echo-text
+               '(neoment-link "mxc://s/p" neoment-emoticon (:title ":party:" :url "mxc://s/p"))))
+  (should-not (neoment-media-link-echo-text '(face bold)))
+  (should-not (neoment-media-link-echo-text nil)))
+
+(defun neoment-media-test-rendered-props (body word)
+  "Render a message with BODY and return the text properties at WORD."
+  (let ((room (neoment-get-room "!r:s")))
+    (puthash "$l" (neoment-message--create :id "$l" :sender "@a:s" :content body
+                                           :timestamp 1000)
+             (neoment-room-messages room))
+    (let ((text (neoment-room-render "!r:s")))
+      (text-properties-at (string-search word text) text))))
+
+(ert-deftest neoment-media-link-echo-text-rendered ()
+  (neoment-media-test
+    (should (equal (neoment-media-link-echo-text
+                    (neoment-media-test-rendered-props "see [docs](https://example.org)" "docs"))
+                   "https://example.org"))
+    (should-not (neoment-media-link-echo-text
+                 (neoment-media-test-rendered-props "[Spoiler](<the end>)" "Spoiler")))))
+
+(defun neoment-media-test-echo (props &optional logged-ok)
+  "Call the popup on a character with PROPS and return the shown text.
+Also check that *Messages* gains no line, unless LOGGED-OK."
+  (with-temp-buffer
+    (insert "x")
+    (add-text-properties 1 2 props)
+    (goto-char 1)
+    (let ((shown nil)
+          (logged (with-current-buffer (messages-buffer) (buffer-size))))
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args)
+                   (setq shown (apply #'format fmt args))
+                   (when message-log-max
+                     (with-current-buffer (messages-buffer)
+                       (let ((inhibit-read-only t))
+                         (goto-char (point-max))
+                         (insert shown "\n")))))))
+        (neoment-media--show-popup (current-buffer) 1))
+      (unless logged-ok
+        (should (= logged (with-current-buffer (messages-buffer) (buffer-size)))))
+      shown)))
+
+(ert-deftest neoment-media-link-at-point-echo ()
+  (should (equal (neoment-media-test-echo '(neoment-link "https://example.org"
+                                                         help-echo "https://example.org"))
+                 "https://example.org"))
+  (should (equal (neoment-media-test-echo '(neoment-link "https://matrix.to/#/@alice:s"))
+                 "https://matrix.to/#/@alice:s"))
+  ;; No posframe for links, even in a GUI frame.
+  (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) t))
+            ((symbol-function 'posframe-show) (lambda (&rest _) (error "Posframe used"))))
+    (should (equal (neoment-media-test-echo '(neoment-link "https://example.org"))
+                   "https://example.org")))
+  ;; Not while the minibuffer is active.
+  (cl-letf (((symbol-function 'active-minibuffer-window) (lambda () 'window)))
+    (should-not (neoment-media-test-echo '(neoment-link "https://example.org")))))
+
+(ert-deftest neoment-media-link-at-point-special-cases ()
+  ;; A spoiler shows nothing.
+  (should-not (neoment-media-test-echo '(neoment-link "the end" neoment-spoiler t)))
+  ;; Plain text shows nothing.
+  (should-not (neoment-media-test-echo '(face bold)))
+  ;; An emoticon link keeps its popup text, not the mxc:// URL.
+  (cl-letf (((symbol-function 'display-graphic-p) (lambda (&rest _) nil)))
+    (should (equal (neoment-media-test-echo
+                    '(neoment-link "mxc://s/p" neoment-emoticon (:title ":party:" :url "mxc://s/p"))
+                    t)
+                   ":party:"))))
+
 (provide 'neoment-media-test)
 ;;; neoment-media-test.el ends here

@@ -144,6 +144,43 @@ PROPS: :ago (minutes since activity), :fav, :direct, :low, :unread,
     (should (equal (mapcar #'neoment-room-id (alist-get 'rooms (neoment-rooms--classify nil)))
                    '("!b:s" "!a:s")))))
 
+(ert-deftest neoment-rooms-notifications-before-unread ()
+  (neoment-rooms-test
+    (neoment-rooms-test-room "!a:s" "A" :ago 1 :unread t)
+    (neoment-rooms-test-room "!b:s" "B" :ago 60 :unread t :notifications 1)
+    (should (equal (mapcar #'neoment-room-id (alist-get 'rooms (neoment-rooms--classify nil)))
+                   '("!b:s" "!a:s")))))
+
+(ert-deftest neoment-rooms-highlights-before-unread ()
+  (neoment-rooms-test
+    (neoment-rooms-test-room "!a:s" "A" :ago 1 :unread t)
+    (neoment-rooms-test-room "!b:s" "B" :ago 60 :unread t :highlights 1)
+    (should (equal (mapcar #'neoment-room-id (alist-get 'rooms (neoment-rooms--classify nil)))
+                   '("!b:s" "!a:s")))))
+
+(ert-deftest neoment-rooms-highlights-and-notifications-by-activity ()
+  (neoment-rooms-test
+    (neoment-rooms-test-room "!a:s" "A" :ago 60 :unread t :highlights 1)
+    (neoment-rooms-test-room "!b:s" "B" :ago 1 :unread t :notifications 1)
+    (should (equal (mapcar #'neoment-room-id (alist-get 'rooms (neoment-rooms--classify nil)))
+                   '("!b:s" "!a:s")))))
+
+(ert-deftest neoment-rooms-full-attention-order ()
+  (neoment-rooms-test
+    (neoment-rooms-test-room "!read:s" "Read" :ago 1)
+    (neoment-rooms-test-room "!unread:s" "Unread" :ago 5 :unread t)
+    (neoment-rooms-test-room "!notif:s" "Notif" :ago 60 :unread t :notifications 2)
+    (should (equal (mapcar #'neoment-room-id (alist-get 'rooms (neoment-rooms--classify nil)))
+                   '("!notif:s" "!unread:s" "!read:s")))))
+
+(ert-deftest neoment-rooms-counts-rank-first-even-when-read ()
+  (neoment-rooms-test
+    (neoment-rooms-test-room "!a:s" "A" :ago 1 :unread t)
+    (neoment-rooms-test-room "!b:s" "B" :ago 60 :notifications 1)
+    (should-not (neoment-room-unread-p (neoment-get-room "!b:s")))
+    (should (equal (mapcar #'neoment-room-id (alist-get 'rooms (neoment-rooms--classify nil)))
+                   '("!b:s" "!a:s")))))
+
 (ert-deftest neoment-rooms-header-face-and-blank-lines ()
   (neoment-rooms-test
     (let* ((text (neoment-rooms-test-render))
@@ -485,6 +522,17 @@ PROPS: :ago (minutes since activity), :fav, :direct, :low, :unread,
         (neoment-completing-read-picker '(("x" . "!x:s")) (lambda (id) (setq picked id))
                                         "Select a room:"))
       (should (equal picked "!x:s")))))
+
+(ert-deftest neoment-rooms-pick-room-notifications-first ()
+  (neoment-rooms-test
+    (neoment-rooms-test-room "!read:s" "Read" :ago 1)
+    (neoment-rooms-test-room "!unread:s" "Unread" :ago 5 :unread t)
+    (neoment-rooms-test-room "!notif:s" "Notif" :ago 60 :unread t :highlights 1)
+    (let (ids)
+      (cl-letf (((symbol-function 'neoment-rooms-pick)
+                 (lambda (room-ids &rest _) (setq ids room-ids))))
+        (neoment-pick-room))
+      (should (equal ids '("!notif:s" "!unread:s" "!read:s"))))))
 
 (provide 'neoment-rooms-test)
 ;;; neoment-rooms-test.el ends here

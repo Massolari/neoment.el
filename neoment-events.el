@@ -369,8 +369,12 @@ room changed."
         (when-let* ((replace (neoment-events--get event 'unsigned 'm.relations
                                                   'm.replace)))
           (neoment-events-handle room replace is-history))
-        (neoment-room-set-last-activity room event-ts (alist-get 'event_id event)
-                                        (neoment-events--get event 'unsigned 'age))
+        (let ((id (alist-get 'event_id event))
+              (age (neoment-events--get event 'unsigned 'age)))
+          (neoment-room-set-last-activity room event-ts id age)
+          (unless (or (neoment-message-thread-root-id message)
+                      (equal (neoment-message-sender message) (neoment-user-id)))
+            (neoment-room-set-unread-activity room event-ts id age)))
         t)))))
 
 (defun neoment-events--handle-redaction (room event)

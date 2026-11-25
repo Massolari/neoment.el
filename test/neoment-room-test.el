@@ -840,6 +840,7 @@ NAME that ends on a glyph boundary."
   (neoment-room-test
     (neoment-room-test-msg room "$1" "@alice:s" "a" 1000)
     (setf (neoment-room-last-activity room) '(:timestamp 1000 :event-id "$1" :age 0)
+          (neoment-room-unread-activity room) '(:timestamp 1000 :event-id "$1" :age 0)
           (neoment-room-unread room) t)
     (should (neoment-room-unread-p room))
     (neoment-room-mark-read "!r:s")
@@ -857,6 +858,45 @@ NAME that ends on a glyph boundary."
     (let ((n (length neoment-test--requests)))
       (neoment-room-mark-read "!r:s")
       (should (= n (length neoment-test--requests))))))
+
+(defun neoment-room-test-read-markers-requests ()
+  "Return the read_markers requests sent so far."
+  (seq-filter (lambda (r) (string-suffix-p "/read_markers" (plist-get r :url)))
+              neoment-test--requests))
+
+(ert-deftest neoment-room-mark-read-skips-own-and-thread-activity ()
+  (neoment-room-test
+    (neoment-events-handle
+     room (neoment-test-event "m.room.message" :id "$1" :ts 1000
+                              :content '((msgtype . "m.text") (body . "a"))))
+    (setf (neoment-room-read-receipt room) '(:event-id "$1" :ts 1000))
+    (neoment-events-handle
+     room (neoment-test-event "m.room.message" :id "$mine" :sender "@me:s" :ts 2000
+                              :content '((msgtype . "m.text") (body . "b"))))
+    (neoment-events-handle
+     room (neoment-test-event "m.room.message" :id "$reply" :ts 3000
+                              :content '((msgtype . "m.text") (body . "c")
+                                         (m.relates_to . ((rel_type . "m.thread")
+                                                          (event_id . "$1"))))))
+    (should (equal (plist-get (neoment-room-last-activity room) :event-id) "$reply"))
+    (neoment-room-mark-read "!r:s")
+    (should-not (neoment-room-test-read-markers-requests))))
+
+(ert-deftest neoment-room-mark-read-targets-last-activity ()
+  (neoment-room-test
+    (neoment-events-handle
+     room (neoment-test-event "m.room.message" :id "$1" :ts 1000
+                              :content '((msgtype . "m.text") (body . "a"))))
+    (setf (neoment-room-read-receipt room) '(:event-id "$0" :ts 500))
+    (neoment-events-handle
+     room (neoment-test-event "m.room.message" :id "$mine" :sender "@me:s" :ts 2000
+                              :content '((msgtype . "m.text") (body . "b"))))
+    (should (neoment-room-unread-p room))
+    (neoment-room-mark-read "!r:s")
+    (should (equal (mapcar (lambda (r) (plist-get r :json))
+                           (neoment-room-test-read-markers-requests))
+                   '(((m.fully_read . "$mine") (m.read . "$mine")))))
+    (should-not (neoment-room-unread-p room))))
 
 ;;;; 5.6 Coalesced rendering
 

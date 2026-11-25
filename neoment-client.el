@@ -64,7 +64,7 @@
   space-rooms typing fully-read
   (unread-notifications 0) (unread-highlights 0)
   joined-member-count unread
-  read-receipt                          ; plist (:event-id :ts :is-local)
+  read-receipt                          ; plist (:event-id :ts :event-ts :is-local)
   avatar-url is-tracked
   summary                               ; plist (:heroes :joined :invited)
   (sender-faces (make-hash-table :test 'equal)))
@@ -431,11 +431,12 @@ An unknown name is fetched in the background."
 
 (defun neoment-room-event-timestamp (room id)
   "Return the timestamp of the event ID in ROOM, or nil when not loaded.
-Look in the messages first, then in the raw events table."
+Look in the raw events table first, which holds edit events under their
+own id, then in the messages."
   (when id
-    (if-let* ((message (neoment-room-find-message room id)))
-        (neoment-message-timestamp message)
-      (alist-get 'origin_server_ts (gethash id (neoment-room-events room))))))
+    (or (alist-get 'origin_server_ts (gethash id (neoment-room-events room)))
+        (when-let* ((message (neoment-room-find-message room id)))
+          (neoment-message-timestamp message)))))
 
 (defun neoment-room--marker-covers-p (room activity id fallback-ts)
   "Return non-nil when the marker on event ID is at or after ACTIVITY.
@@ -450,14 +451,16 @@ of ID is not loaded, compare FALLBACK-TS instead, if non-nil."
 (defun neoment-room-unread-p (room)
   "Return non-nil when ROOM is unread.
 ROOM is unread when marked so, or when it has unread activity and neither
-its read receipt nor its fully read marker is at or after it."
+its read receipt nor its fully read marker is at or after it.  When the
+receipt's event is not loaded, use the event timestamp recorded with the
+receipt, else the time the receipt was sent."
   (or (eq (neoment-room-unread room) t)
       (let ((activity (neoment-room-unread-activity room))
             (receipt (neoment-room-read-receipt room)))
         (and (plist-get activity :event-id)
              (not (neoment-room--marker-covers-p
                    room activity (plist-get receipt :event-id)
-                   (plist-get receipt :ts)))
+                   (or (plist-get receipt :event-ts) (plist-get receipt :ts))))
              (not (neoment-room--marker-covers-p
                    room activity (neoment-room-fully-read room) nil))))))
 

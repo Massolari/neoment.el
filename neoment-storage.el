@@ -304,9 +304,11 @@ Each alist maps a name (string) to non-nil when folded."
                :last-activity (and (alist-get 'last_activity data)
                                    (neoment-storage--alist-to-plist
                                     (alist-get 'last_activity data)))
-               ;; A cache from an older version has no unread_activity.
-               :unread-activity (let ((activity (or (alist-get 'unread_activity data)
-                                                    (alist-get 'last_activity data))))
+               ;; A cache from an older version has no unread_activity key.
+               ;; A null value means the room has no unread activity.
+               :unread-activity (let ((activity (if (assq 'unread_activity data)
+                                                    (alist-get 'unread_activity data)
+                                                  (alist-get 'last_activity data))))
                                   (and activity
                                        (neoment-storage--alist-to-plist activity)))
                :is-direct (neoment-storage--parse-bool (alist-get 'is_direct data))

@@ -845,7 +845,7 @@ NAME that ends on a glyph boundary."
     (should (neoment-room-unread-p room))
     (neoment-room-mark-read "!r:s")
     (should-not (neoment-room-unread-p room))
-    (should (equal (neoment-room-read-receipt room) '(:event-id "$1" :ts 1000 :is-local t)))
+    (should (equal (neoment-room-read-receipt room) '(:event-id "$1" :ts 1000 :is-local t :event-ts 1000)))
     (should (equal (neoment-room-fully-read room) "$1"))
     (let ((urls (neoment-test-request-urls)))
       (should (seq-find (lambda (u) (string-match-p "/send/m.marked_unread/" u)) urls))

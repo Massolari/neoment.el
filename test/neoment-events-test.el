@@ -158,6 +158,65 @@
     (should-not (neoment-room-event-timestamp room "$unknown"))
     (should-not (neoment-room-event-timestamp room nil))))
 
+;; A receipt on an edit event resolves to the edit's own timestamp,
+;; not the edited message's.
+(ert-deftest neoment-client-unread-receipt-on-edit-event ()
+  (neoment-events-test
+    (neoment-events-handle room (neoment-events-test-text "a" :id "$a" :ts 10))
+    (neoment-events-handle room (neoment-events-test-text "b" :id "$b" :ts 20))
+    (neoment-events-handle
+     room (neoment-events-test-text
+           "* a2" :id "$edit" :ts 30
+           :extra '((m.new_content . ((msgtype . "m.text") (body . "a2")))
+                    (m.relates_to . ((rel_type . "m.replace") (event_id . "$a"))))))
+    (should (= (neoment-room-event-timestamp room "$edit") 30))
+    (should (equal (plist-get (neoment-room-unread-activity room) :event-id) "$b"))
+    (setf (neoment-room-fully-read room) "$edit")
+    (should-not (neoment-room-unread-p room))
+    (setf (neoment-room-fully-read room) nil
+          (neoment-room-read-receipt room) '(:event-id "$edit" :ts 5))
+    (should-not (neoment-room-unread-p room))))
+
+;; Moving the marker back, then losing the loaded events, keeps the room
+;; unread even though the server echoes the receipt with a later ts.
+(ert-deftest neoment-client-unread-receipt-moved-back ()
+  (neoment-events-test
+    (neoment-events-handle room (neoment-events-test-text "old" :id "$old" :ts 40))
+    (neoment-events-handle room (neoment-events-test-text "act" :id "$act" :ts 100))
+    (neoment-api-set-read-markers "!r:s" '(:fully-read "$old" :read "$old"))
+    (should (equal (plist-get (neoment-room-read-receipt room) :event-ts) 40))
+    (should (neoment-room-unread-p room))
+    (neoment-events-handle room (neoment-events-test-receipt "$old" "@me:s" 500))
+    (should (equal (neoment-room-read-receipt room)
+                   '(:ts 500 :event-id "$old" :event-ts 40)))
+    (neoment-room-set-tracked room nil)
+    (should-not (neoment-room-event-timestamp room "$old"))
+    (should (neoment-room-unread-p room))
+    ;; A later server receipt for the same event keeps the event ts.
+    (neoment-events-handle room (neoment-events-test-receipt "$old" "@me:s" 600))
+    (should (equal (plist-get (neoment-room-read-receipt room) :event-ts) 40))
+    (should (neoment-room-unread-p room))))
+
+(ert-deftest neoment-events-receipt-records-event-ts ()
+  (neoment-events-test
+    (neoment-events-handle room (neoment-events-test-text "a" :id "$a" :ts 40))
+    (neoment-events-handle room (neoment-events-test-receipt "$a" "@me:s" 500))
+    (should (equal (neoment-room-read-receipt room) '(:ts 500 :event-id "$a" :event-ts 40)))
+    ;; A receipt on another unloaded event drops the old event ts.
+    (neoment-events-handle room (neoment-events-test-receipt "$x" "@me:s" 600))
+    (should (equal (neoment-room-read-receipt room) '(:ts 600 :event-id "$x")))))
+
+(ert-deftest neoment-events-limited-thread-reply-is-unread-activity ()
+  (neoment-events-test
+    (let ((neoment-events--timeline-limited t))
+      (neoment-events-handle
+       room (neoment-events-test-text
+             "reply" :id "$r" :ts 20
+             :extra '((m.relates_to . ((rel_type . "m.thread") (event_id . "$root"))))))
+      (neoment-events-handle room (neoment-events-test-text "mine" :id "$m" :ts 30
+                                                            :sender "@me:s")))
+    (should (equal (neoment-events-test-activity-ids room) '("$m" "$r")))))
+
 (ert-deftest neoment-client-ordering-and-last-activity ()
   (let ((a (neoment-message--create :id "a" :timestamp 10 :age 500))
         (b (neoment-message--create :id "b" :timestamp 10 :age 100))
@@ -711,6 +770,20 @@
                          '(:timestamp 10 :event-id "$a" :age 0)))
           (should (equal (neoment-room-last-activity back)
                          '(:timestamp 20 :event-id "$mine" :age 0)))
+          (should-not (neoment-room-unread-p back)))))))
+
+(ert-deftest neoment-storage-cache-null-unread-activity ()
+  (let ((neoment--client nil))
+    (neoment-test-new-client)
+    (neoment-test-with-http (lambda (_) 'pending)
+      (let ((room (neoment-get-room "!r:s")))
+        (puthash "@me:s" t (neoment-room-members room))
+        (setf (neoment-room-last-activity room) '(:timestamp 20 :event-id "$reply" :age 0)
+              (neoment-room-read-receipt room) '(:event-id "$a" :ts 10 :is-local nil))
+        (should-not (neoment-room-unread-p room))
+        (neoment-events-test-cache-round-trip)
+        (let ((back (neoment-has-room "!r:s")))
+          (should-not (neoment-room-unread-activity back))
           (should-not (neoment-room-unread-p back)))))))
 
 (ert-deftest neoment-storage-cache-without-unread-activity ()

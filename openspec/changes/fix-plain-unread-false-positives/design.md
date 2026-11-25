@@ -23,7 +23,9 @@ See proposal.md (Why). Relevant current state:
 
 ### 1. A separate `unread-activity` field instead of filtering `last-activity`
 
-Add a room slot `unread-activity` with the same plist shape as `last-activity`, updated by a setter that applies the same monotonic rule (`neoment-room-set-unread-activity`, sharing the comparison with `neoment-room-set-last-activity`). `neoment-events--handle-message` calls it alongside the last-activity update, but only when the message has no `thread-root-id` and its sender is not `(neoment-user-id)`.
+Add a room slot `unread-activity` with the same plist shape as `last-activity`, updated by a setter that applies the same monotonic rule (`neoment-room-set-unread-activity`, sharing the comparison with `neoment-room-set-last-activity`). `neoment-events--handle-message` calls it alongside the last-activity update, but only when the message's sender is not `(neoment-user-id)` and it has no `thread-root-id`.
+
+One exception: when a sync timeline is `limited` (a gap before it), another user's thread reply also counts. The sync filter uses `timeline.limit 1`, so after a gap the main-timeline messages before the reply may never be seen, and staying unread is the safer guess. `neoment-sync--process-joined` binds `neoment-events--timeline-limited` while it applies such a timeline.
 
 *Alternative:* Exclude own messages and thread replies from `last-activity` itself. Rejected because the room would no longer move up the list when the user posts or a thread gets a reply, and the relative time would go stale. *Alternative:* Derive unread activity on demand from stored messages. Rejected because untracked rooms only hold the newest message, so the answer would be missing exactly when the newest message is the user's own or a thread reply.
 
@@ -39,10 +41,13 @@ unread  = (eq unread t)
 marker-covers-p(id, fallback-ts):
   id = activity id                         -> t
   ts := timestamp of the event id if loaded, else fallback-ts
+fallback-ts for the receipt := receipt :event-ts, else receipt :ts
   ts and ts >= activity :timestamp          -> t
 ```
 
-"Loaded" means `neoment-room-find-message` returns a message (which also matches edits by original id), or the raw `events` table holds the id with an `origin_server_ts`. The second lookup catches state events that other clients put receipts on.
+"Loaded" means the raw `events` table holds the id with an `origin_server_ts`, or `neoment-room-find-message` returns a message. The `events` table is checked first: it holds state events that other clients put receipts on, and edit events under their own id. `find-message` would match an edit id to the edited message and return the original message's timestamp. The table lookup is also O(1), which matters in the room-list sort.
+
+The receipt also records `:event-ts`, the timestamp of its event, when that event is loaded as the receipt arrives (local receipts from `neoment-api-set-read-markers` included). A later receipt on the same event keeps it even when the event is no longer loaded. This covers a marker moved back to an older event: the server echoes the receipt with a send time of about now, and once the room is untracked or restored from the cache, that send time would wrongly count as read.
 
 *Why receipt `ts` only as fallback:* it is the time the receipt was sent, not the event's position, and it comes from the user's homeserver clock while `origin_server_ts` may come from another server. A loaded event's own timestamp is exact, so it wins. `fully_read` has no timestamp, so an unloaded `fully_read` event proves nothing and does not count.
 
@@ -50,17 +55,19 @@ marker-covers-p(id, fallback-ts):
 
 ### 3. Leave read-marking callers alone
 
-`neoment-room-mark-read` and `r` keep targeting `last-activity :event-id`. That event is at or after unread activity, and the local receipt they set uses its message timestamp, so the room becomes read immediately. When the newest activity is the user's own message or a thread reply, the room is already read, so no receipt is sent. This matches the Matrix rule that your own events are implicitly read. The compose path that sets `fully-read` to a sent event stays and is now redundant but harmless.
+`neoment-room-mark-read` and `r` keep targeting `last-activity :event-id`. That event is at or after unread activity, and the local receipt they set uses its message timestamp, so the room becomes read immediately. When the newest activity is the user's own message or a thread reply, the room is already read, so no receipt is sent. This partly follows the Matrix rule that your own events are implicitly read: an own message does not make a room unread, but it does not cover earlier unread activity either (a client that sends no receipt leaves the room unread, as before). The compose path that sets `fully-read` to a sent event stays and is now redundant but harmless.
 
 ### 4. Cache
 
-`neoment-storage` writes `unread_activity` next to `last_activity` with the same plist↔alist helpers. On restore, a missing or null `unread_activity` falls back to `last_activity`. That reproduces today's behavior for a room until new activity arrives, instead of silently marking every cached room read.
+`neoment-storage` writes `unread_activity` next to `last_activity` with the same plist↔alist helpers. On restore, a missing `unread_activity` key falls back to `last_activity`. A null value means the room has no unread activity and stays nil; treating it like a missing key would bring the false positive back after every restart. That reproduces today's behavior for a room until new activity arrives, instead of silently marking every cached room read.
 
 ## Risks / Trade-offs
 
 - [Clock skew between homeservers makes a fallback receipt `ts` look later than an unloaded-receipt room's activity] → Used only when the receipt's event isn't loaded, and a receipt `ts` is normally well after the event it acknowledges. A wrong "read" is limited to messages that arrived within the skew window.
 - [Two events share one millisecond, and the receipt is on the earlier one] → `>=` treats the room as read. This is rare and harmless. The server counts still flag mentions.
 - [A thread reply from another user no longer sets `•` on its own] → This was the user's choice. The server notification count still shows the room in the notifications group when the push rules notify.
+- [A receipt on an older event whose event was never loaded, sent after the unread activity] → It has no `:event-ts`, so its send time counts and the room shows read. This needs a client that receipts an older event without neoment ever loading it, and it is limited to rooms whose receipt and activity events are both unloaded.
+- [A limited timeline whose thread reply follows main-timeline messages that were already read] → The room shows unread until opened. This only happens after a gap, where the safer guess is unread.
 - [An older cache's fallback keeps a false positive whose last activity was an own message or a thread reply] → It clears the next time the room is opened or new main-timeline activity arrives.
 
 ## Migration Plan

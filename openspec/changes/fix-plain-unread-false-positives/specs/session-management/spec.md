@@ -16,8 +16,12 @@
 ## ADDED Requirements
 
 ### Requirement: Cache without unread activity
-When a cached room has no `unread_activity`, as in a cache written by an older version, the restored room SHALL use its `last_activity` as unread activity.
+When a cached room has no `unread_activity` key, as in a cache written by an older version, the restored room SHALL use its `last_activity` as unread activity. A null `unread_activity` SHALL restore as no unread activity.
 
 #### Scenario: Cache from an older version
 - **WHEN** a cached room has `last_activity` but no `unread_activity`
 - **THEN** the restored room's unread activity equals its last activity
+
+#### Scenario: Room without unread activity
+- **WHEN** a room with last activity but no unread activity is saved and restored
+- **THEN** the restored room has no unread activity and stays read

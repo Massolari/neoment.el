@@ -306,6 +306,9 @@
       (should (equal (neoment-message-id m) "$e2"))
       (should (equal (neoment-message-edit-data m) '(:id "$m" :timestamp 200)))
       (should (equal (neoment-message-effective-id m) "$m")))
+    ;; The edited message stays stored under its original id.
+    (should (equal (hash-table-keys (neoment-room-messages room)) '("$m")))
+    (should-not (neoment-room-get-message room "$e2"))
     (neoment-events-handle-multiple room (list (neoment-events-test-edit "$e1" "$m" "v100" 100)))
     (should (equal (neoment-message-content (neoment-room-get-message room "$m")) "v200"))
     ;; Edit before target is pending.
@@ -537,6 +540,35 @@
         (should (zerop (hash-table-count (neoment-room-pending-events room))))
         (should-not (neoment-room-prev-batch room))))))
 
+;; Issue #18: closing a buffer must keep an edited message under its original id.
+(ert-deftest neoment-events-close-keeps-edited-message-key ()
+  (neoment-events-test
+    (neoment-events-handle-multiple room (list (neoment-events-test-text "v1" :id "$o" :ts 1)))
+    (neoment-events-handle-multiple room (list (neoment-events-test-edit "$oe" "$o" "v2" 2)))
+    (neoment-room-set-tracked room nil)
+    (should (equal (hash-table-keys (neoment-room-messages room)) '("$o")))
+    (neoment-events-handle
+     room (neoment-test-event "m.reaction" :id "$r" :ts 3 :sender "@bob:s"
+                              :content '((m.relates_to . ((rel_type . "m.annotation")
+                                                          (event_id . "$o")
+                                                          (key . "👍"))))))
+    (should (equal (neoment-message-reactions (neoment-room-get-message room "$o"))
+                   '(("👍" ("$r" . "@bob:s")))))
+    (should (zerop (hash-table-count (neoment-room-pending-events room))))))
+
+(ert-deftest neoment-client-add-message-keys-by-effective-id ()
+  (neoment-events-test
+    (neoment-room-set-tracked room nil)
+    (neoment-room-add-message
+     room (neoment-message--create :id "$oe" :timestamp 2 :content "v2"
+                                   :edit-data '(:id "$o" :timestamp 2)))
+    (should (equal (hash-table-keys (neoment-room-messages room)) '("$o")))
+    (neoment-room-set-tracked room t)
+    (neoment-room-add-message
+     room (neoment-message--create :id "$pe" :timestamp 3 :content "v2"
+                                   :edit-data '(:id "$p" :timestamp 3)))
+    (should (equal (hash-table-keys (neoment-room-messages room)) '("$p")))))
+
 ;;;; 3.10 Cache
 
 (ert-deftest neoment-storage-cache-compact-room ()
@@ -571,6 +603,41 @@
             (should (equal (neoment-message-content (neoment-room-last-message back)) "m49"))
             (should (equal (neoment-room-read-receipt back) '(:event-id "$1" :ts 1 :is-local t)))
             (should (neoment-room-is-member-p "!r:s"))))))))
+
+;; Issue #18: an edited last message must survive a save/load cycle.
+(ert-deftest neoment-storage-cache-edited-message-key ()
+  (let ((neoment--client nil))
+    (neoment-test-new-client)
+    (neoment-test-with-http (lambda (_) 'pending)
+      (let ((room (neoment-get-room "!r:s")))
+        (neoment-room-set-tracked room t)
+        (neoment-events-handle room (neoment-events-test-text "v1" :id "$o" :ts 1))
+        (neoment-events-handle room (neoment-events-test-edit "$oe" "$o" "v2" 2))
+        (let* ((data (neoment-json-decode
+                      (neoment-json-encode (neoment-storage-cache-json))))
+               (saved (cdr (assq '!r:s (alist-get 'rooms data)))))
+          (should (equal (mapcar #'car (alist-get 'messages saved)) '($o)))
+          (neoment-test-new-client)
+          (neoment-storage-load-cache-json data)
+          (let ((m (neoment-room-get-message (neoment-has-room "!r:s") "$o")))
+            (should m)
+            (should (equal (neoment-message-content m) "v2"))
+            (should (equal (neoment-message-id m) "$oe"))
+            (should (equal (neoment-message-edit-data m) '(:id "$o" :timestamp 2)))))))))
+
+(ert-deftest neoment-storage-load-heals-edit-id-key ()
+  (let ((neoment--client nil))
+    (neoment-test-new-client)
+    (let* ((msg (neoment-message--create :id "$oe" :timestamp 2 :content "v2"
+                                         :sender "@a:s"
+                                         :edit-data '(:id "$o" :timestamp 2)))
+           (data (neoment-json-decode
+                  (neoment-json-encode
+                   `((id . "!r:s")
+                     (messages . (($oe . ,(neoment-storage--message-to-json msg))))))))
+           (room (neoment-storage--room-from-json data)))
+      (should (equal (hash-table-keys (neoment-room-messages room)) '("$o")))
+      (should (equal (neoment-message-content (neoment-room-get-message room "$o")) "v2")))))
 
 (provide 'neoment-events-test)
 ;;; neoment-events-test.el ends here

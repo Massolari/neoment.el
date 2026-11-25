@@ -219,5 +219,43 @@
           (should (neoment-test-message-p "Cannot modify status for invited rooms")))
         (kill-buffer buffer)))))
 
+(ert-deftest neoment-room-info-quit-side-window ()
+  (neoment-space-test
+    (setf (neoment-room-name (neoment-get-room "!r:s")) "dev")
+    (let ((room-buffer (generate-new-buffer "dev")))
+      (unwind-protect
+          (save-window-excursion
+            (delete-other-windows)
+            (switch-to-buffer room-buffer)
+            (let* ((room-window (selected-window))
+                   (buffer (neoment-room-info-open "!r:s" t)))
+              (should (= (length (window-list)) 2))
+              (should (eq (window-buffer (selected-window)) buffer))
+              (with-current-buffer buffer (neoment-room-info-quit))
+              (should-not (buffer-live-p buffer))
+              (should (= (length (window-list)) 1))
+              (should (eq (selected-window) room-window))
+              (should (eq (window-buffer room-window) room-buffer))))
+        (kill-buffer room-buffer)))))
+
+(ert-deftest neoment-room-info-quit-existing-window ()
+  (neoment-space-test
+    (setf (neoment-room-name (neoment-get-room "!r:s")) "dev")
+    (let ((scratch (generate-new-buffer "scratch")))
+      (unwind-protect
+          (save-window-excursion
+            (delete-other-windows)
+            (switch-to-buffer scratch)
+            (let* ((window (selected-window))
+                   (count (length (window-list)))
+                   (buffer (neoment-room-info-open "!r:s")))
+              (should (eq (window-buffer window) buffer))
+              (with-current-buffer buffer (neoment-room-info-quit))
+              (should-not (buffer-live-p buffer))
+              (should (= (length (window-list)) count))
+              (should (window-live-p window))
+              (should (eq (window-buffer window) scratch))))
+        (kill-buffer scratch)))))
+
 (provide 'neoment-space-info-test)
 ;;; neoment-space-info-test.el ends here

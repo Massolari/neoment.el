@@ -302,9 +302,11 @@ With BESIDE, use a 50-column window to the right."
     (neoment-room-info-render-buffer)))
 
 (defun neoment-room-info-quit ()
-  "Kill the room information buffer."
+  "Kill the room information buffer and close its window.
+A window created to show the buffer is deleted; a window that already
+existed shows its previous buffer again."
   (interactive)
-  (kill-buffer (current-buffer)))
+  (quit-window t))
 
 (provide 'neoment-room-info)
 ;;; neoment-room-info.el ends here

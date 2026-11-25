@@ -147,9 +147,20 @@ inserted and before point and window starts are restored.")
     (neoment-faces-user-face index)))
 
 (defun neoment-room--pad-name (name)
-  "Return NAME truncated and right-aligned in the name column."
-  (let ((name (truncate-string-to-width name neoment-room-name-width)))
-    (concat (make-string (- neoment-room-name-width (string-width name)) ?\s) name)))
+  "Return NAME truncated and right-aligned in the name column.
+Width is measured with `string-width', and truncation keeps whole
+glyphs, so composed emoji are neither split nor miscounted."
+  (when (> (string-width name) neoment-room-name-width)
+    (let ((kept ""))
+      (catch 'full
+        (dolist (glyph (string-glyph-split name))
+          (let ((next (concat kept glyph)))
+            (if (> (string-width next) neoment-room-name-width)
+                (throw 'full nil)
+              (setq kept next)))))
+      (setq name kept)))
+  (concat (make-string (max 0 (- neoment-room-name-width (string-width name))) ?\s)
+          name))
 
 (defun neoment-room--header (room message)
   "Return the gutter of the first line of MESSAGE in ROOM."

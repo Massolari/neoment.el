@@ -145,6 +145,58 @@
     (should (eq (neoment-room--sender-face room "@long:s") 'neoment-user-1))
     (should (eq (neoment-room--sender-face room "@alice:s") 'neoment-user-2))))
 
+(defun neoment-room-test-check-pad-name (name)
+  "Check `neoment-room--pad-name' on NAME and return the visible part.
+The result must be 19 columns wide, and its visible part a prefix of
+NAME that ends on a glyph boundary."
+  (let* ((result (neoment-room--pad-name name))
+         (visible (string-trim-left result " +"))
+         (end (length visible))
+         (comp (and (> end 0)
+                    (find-composition-internal (1- end) end name nil))))
+    (should (= (string-width result) 19))
+    (should (string-prefix-p visible name))
+    (should (or (null comp) (<= (cadr comp) end)))
+    visible))
+
+(ert-deftest neoment-room-pad-name-display-width ()
+  ;; `string-width' composes emoji sequences only in a buffer shown in a
+  ;; window, as a room buffer is; ERT's own buffer is not shown.
+  (save-window-excursion
+    (with-temp-buffer
+      (set-window-buffer nil (current-buffer))
+      (should (= (string-width "❤️") 2))
+      (neoment-room-test-pad-name-cases))))
+
+(defun neoment-room-test-pad-name-cases ()
+  "Check `neoment-room--pad-name' on names with wide and composed glyphs."
+  ;; Emoji + VS16: each displays 2 columns but counts 1 per character.
+  (let ((visible (neoment-room-test-check-pad-name
+                  (apply #'concat (make-list 20 "❤️")))))
+    (should (equal visible (apply #'concat (make-list 9 "❤️")))))
+  ;; Fullwidth characters: nine fit (18 columns) after one space.
+  (should (equal (neoment-room--pad-name (make-string 20 ?Ａ))
+                 (concat " " (make-string 9 ?Ａ))))
+  (neoment-room-test-check-pad-name (make-string 20 ?Ａ))
+  ;; ZWJ family emoji: each shows whole or not at all.
+  (let ((visible (neoment-room-test-check-pad-name
+                  (apply #'concat (make-list 12 "👨‍👩‍👧‍👦")))))
+    (should (string-suffix-p "👨‍👩‍👧‍👦" visible)))
+  ;; Emoji sequences followed by text (`string-glyph-split' hangs here).
+  (should (equal (neoment-room-test-check-pad-name "❤️ Alice Wonderland Smith")
+                 "❤️ Alice Wonderland"))
+  (dolist (name '("Alice 👍🏽 Wonderland Smith" "👨‍👩‍👧 Alice Wonderland Smith"
+                  "🇧🇷 Alice Wonderland Smith"))
+    (neoment-room-test-check-pad-name name))
+  ;; Huge names of zero-width characters are clipped before measuring.
+  (let ((result (neoment-room--pad-name
+                 (concat (make-string 100000 #x200b) "ABC"))))
+    (should (= (string-width result) 19))
+    (should (= (length result) (+ 19 200))))
+  ;; Plain ASCII keeps its first 19 characters.
+  (should (equal (neoment-room-test-check-pad-name "ABCDEFGHIJKLMNOPQRSTUVWXY")
+                 "ABCDEFGHIJKLMNOPQRS")))
+
 (ert-deftest neoment-room-render-date-change-and-blank-lines ()
   (neoment-room-test
     (neoment-room-test-msg room "$1" "@alice:s" "a\n   \nb" (neoment-room-test-ts 23 0 0 22))

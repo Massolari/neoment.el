@@ -147,9 +147,33 @@ inserted and before point and window starts are restored.")
     (neoment-faces-user-face index)))
 
 (defun neoment-room--pad-name (name)
-  "Return NAME truncated and right-aligned in the name column."
-  (let ((name (truncate-string-to-width name neoment-room-name-width)))
-    (concat (make-string (- neoment-room-name-width (string-width name)) ?\s) name)))
+  "Return NAME truncated and right-aligned in the name column.
+Width is measured with `string-width', and truncation keeps whole
+glyphs, so composed emoji are neither split nor miscounted."
+  ;; Far more than 19 columns needs; bounds the cost of hostile names
+  ;; made of thousands of zero-width characters.
+  (when (> (length name) 200)
+    (setq name (substring name 0 200)))
+  (when (> (string-width name) neoment-room-name-width)
+    ;; Walk composed glyphs by hand: `string-glyph-split' can loop
+    ;; forever on an emoji sequence followed by more text.
+    (let ((len (length name))
+          (pos 0)
+          (width 0))
+      (catch 'full
+        (while (< pos len)
+          (let* ((comp (find-composition-internal pos (1+ pos) name nil))
+                 (next (if (and comp (= (car comp) pos) (> (cadr comp) pos))
+                           (cadr comp)
+                         (1+ pos)))
+                 (glyph-width (string-width name pos next)))
+            (when (> (+ width glyph-width) neoment-room-name-width)
+              (throw 'full nil))
+            (setq width (+ width glyph-width)
+                  pos next))))
+      (setq name (substring name 0 pos))))
+  (concat (make-string (max 0 (- neoment-room-name-width (string-width name))) ?\s)
+          name))
 
 (defun neoment-room--header (room message)
   "Return the gutter of the first line of MESSAGE in ROOM."

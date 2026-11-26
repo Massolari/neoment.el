@@ -43,7 +43,7 @@ An `m.in_reply_to` relation SHALL set `replying_to` to the replied message (id =
 - **THEN** the reply quote shows sender `@bob:s` and content `question`
 
 ### Requirement: Redactions
-`m.room.redaction` of an unknown target SHALL be pending. A target that is already redacted is ignored. Redacting an edit event SHALL remove the edited message entry, but only when the edit's sender matches the edited message's sender. Redacting an edit from another sender MUST leave the message unchanged. Redacting a normal message SHALL set content `[Redacted]` (or `[Redacted: <reason>]`) and `was_redacted`. Redacting a reaction SHALL remove it, and delete the key when its list becomes empty.
+`m.room.redaction` of an unknown target SHALL be pending. A target that is already redacted is ignored. Redacting an edit event SHALL remove the edited message entry, but only when the edit's sender matches the edited message's sender and the edited message is not a state message. Redacting an edit from another sender, or an edit of a state message, MUST leave the message unchanged. Redacting a normal message SHALL set content `[Redacted]` (or `[Redacted: <reason>]`) and `was_redacted`. Redacting a reaction SHALL remove it, and delete the key when its list becomes empty.
 
 #### Scenario: Redact last reaction
 - **WHEN** the only 👍 reaction on a message is redacted
@@ -52,3 +52,7 @@ An `m.in_reply_to` relation SHALL set `replying_to` to the replied message (id =
 #### Scenario: Redact a foreign edit
 - **WHEN** `@mallory:s` sends an `m.replace` of a message from `@alice:s` and then redacts that edit
 - **THEN** the message from `@alice:s` is still in the room with its original content
+
+#### Scenario: Redact an edit of a state message
+- **WHEN** `@alice:s` sends an `m.replace` of her own membership event and then redacts that edit
+- **THEN** the membership event is still in the room with its original content

@@ -32,7 +32,7 @@ See proposal.md (Why) for motivation and `specs/matrix-events/spec.md` for the r
 
 4. **Reply fetch: use the bundled replacement only when its sender matches the event's sender.** Otherwise call `neoment-events-event-to-message` on the original event. This is a one-line condition in `neoment-events--event-message-fields`.
 
-5. **Redaction of an edit: remove the target message only when the redacted edit's sender matches the target message's sender.** In every other case, leave the message alone. The edit event's content is still cleared as today, so it is not redacted twice. Return nil when nothing visible changed, so the room is not re-rendered for nothing.
+5. **Redaction of an edit: remove the target message only when the redacted edit's sender matches the target message's sender and the target is not a state message.** Edits of state messages are ignored (decision 1), so redacting one must not delete the state message either. In every other case, leave the message alone. The edit event's content is still cleared as today, so it is not redacted twice. Return nil when nothing visible changed, so the room is not re-rendered for nothing.
    - Alternative: change redaction of an edit to revert to the previous content instead of removing the message. That would be better behavior, but it changes the existing spec for same-sender edits and is out of scope for this security fix.
 
 ## Risks / Trade-offs

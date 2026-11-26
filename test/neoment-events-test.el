@@ -377,6 +377,20 @@
       (should m)
       (should (equal (neoment-message-content m) "hello")))))
 
+(ert-deftest neoment-events-redact-state-edit ()
+  (neoment-events-test
+    (let* ((member (neoment-events-test-member "join" "@alice:s" "@alice:s"))
+           (id (alist-get 'event_id member)))
+      (neoment-events-handle-multiple
+       room (list member (neoment-events-test-edit "$se" id "hacked" 2000)))
+      (let ((before (neoment-message-content (neoment-room-get-message room id))))
+        (should-not (neoment-events-handle
+                     room (neoment-test-event "m.room.redaction" :id "$x" :ts 3000
+                                              :content '((redacts . "$se")))))
+        (let ((m (neoment-room-get-message room id)))
+          (should m)
+          (should (equal (neoment-message-content m) before)))))))
+
 (ert-deftest neoment-events-redactions ()
   (neoment-events-test
     (neoment-events-handle-multiple

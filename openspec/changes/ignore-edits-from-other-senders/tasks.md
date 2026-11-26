@@ -14,7 +14,7 @@
 
 ## 3. Redacting a foreign edit keeps the message
 
-- [x] 3.1 In the `m.replace` branch of `neoment-events--handle-redaction`, remove the target message from `neoment-room-messages` only when that message exists and `neoment-events--same-sender-p` holds between the redacted edit's `sender` and the message's sender. Still clear the edit event's content. Return nil when the message was left in place. Verify with a new ERT test: a message from `@alice:s`, an edit of it from `@mallory:s`, then a redaction of that edit from `@mallory:s` → `(neoment-room-get-message room "$m")` still exists with content `hello`. Also check that redacting a same-sender edit still removes the message, as `neoment-events-redactions` expects. Verify with `make test`.
+- [x] 3.1 In the `m.replace` branch of `neoment-events--handle-redaction`, remove the target message from `neoment-room-messages` only when that message exists and `neoment-events--same-sender-p` holds between the redacted edit's `sender` and the message's sender. and the message is not a state message (a rejected state edit is still stored, so a later redaction would otherwise delete the state message). Cover it with `neoment-events-redact-state-edit`. Still clear the edit event's content. Return nil when the message was left in place. Verify with a new ERT test: a message from `@alice:s`, an edit of it from `@mallory:s`, then a redaction of that edit from `@mallory:s` → `(neoment-room-get-message room "$m")` still exists with content `hello`. Also check that redacting a same-sender edit still removes the message, as `neoment-events-redactions` expects. Verify with `make test`.
 
 ## 4. Integration check
 

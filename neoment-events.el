@@ -404,8 +404,11 @@ room changed."
                  (alist-get 'event_id relates))
             (let* ((edited-id (alist-get 'event_id relates))
                    (edited (neoment-room-get-message room edited-id)))
-              ;; Only an edit from the message's own sender removes it.
+              ;; Only an edit from the message's own sender removes it, and
+              ;; never when the target is a state message (edits of state
+              ;; are ignored, so redacting one changes nothing).
               (if (and edited
+                       (not (neoment-message-is-state edited))
                        (neoment-events--same-sender-p
                         (alist-get 'sender target) (neoment-message-sender edited)))
                   (remhash edited-id (neoment-room-messages room))

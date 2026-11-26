@@ -207,6 +207,12 @@ When it is not known yet, return a placeholder and fetch the event."
                                 :thumbnail (neoment-events--thumbnail content))))
           (_ attachment))))))
 
+(defun neoment-events--content-attachment (content type)
+  "Return the attachment of TYPE described by CONTENT, or nil.
+A location needs a `geo_uri'; every other TYPE needs a `url'."
+  (when (and type (alist-get (if (eq type 'location) 'geo_uri 'url) content))
+    (neoment-events--attachment content type)))
+
 (defun neoment-events-event-to-message (event)
   "Convert the message EVENT into a `neoment-message'.
 Replies are not resolved here."
@@ -241,8 +247,7 @@ Replies are not resolved here."
      :was-redacted (and (neoment-events--get event 'unsigned 'redacted_because) t)
      :age (neoment-events--get event 'unsigned 'age)
      :mentions (copy-sequence (neoment-events--get content 'm.mentions 'user_ids))
-     :attachment (and type (alist-get 'url content)
-                      (neoment-events--attachment content type))
+     :attachment (neoment-events--content-attachment content type)
      :thread-root-id (and (equal (alist-get 'rel_type relates) "m.thread")
                           (alist-get 'event_id relates))
      :thread-replies-count (and (neoment-events--get event 'unsigned 'm.relations
@@ -367,6 +372,11 @@ room changed."
                    event-ts))
           nil)
          (new-content
+          (when-let* ((attachment (neoment-events--content-attachment
+                                   new-content
+                                   (cdr (assoc (alist-get 'msgtype new-content)
+                                               neoment-events-attachment-types)))))
+            (setf (neoment-message-attachment target) attachment))
           (setf (neoment-message-content target) (alist-get 'body new-content)
                 (neoment-message-formatted-content target)
                 (alist-get 'formatted_body new-content)

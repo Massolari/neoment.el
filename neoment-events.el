@@ -113,6 +113,7 @@
         (neoment-message-timestamp target) (neoment-message-timestamp source)
         (neoment-message-mentions target) (neoment-message-mentions source)
         (neoment-message-attachment target) (neoment-message-attachment source)
+        (neoment-message-was-redacted target) (neoment-message-was-redacted source)
         (neoment-message-placeholder target) nil))
 
 (defun neoment-events--reply-to (room event-id message)
@@ -144,7 +145,8 @@ When it is not known yet, return a placeholder and fetch the event."
              (let ((entry (gethash key neoment-events--reply-cache))
                    (data (plist-get result :ok))
                    (fetched nil))
-               (when (and data (alist-get 'content data))
+               (when (and data (or (alist-get 'content data)
+                                   (neoment-events--redacted-p data)))
                  (setq fetched (neoment-events--event-message-fields data)))
                (if fetched
                    (progn
@@ -207,6 +209,10 @@ When it is not known yet, return a placeholder and fetch the event."
                                 :thumbnail (neoment-events--thumbnail content))))
           (_ attachment))))))
 
+(defun neoment-events--redacted-p (event)
+  "Return non-nil when EVENT arrived redacted (`unsigned.redacted_because')."
+  (and (neoment-events--get event 'unsigned 'redacted_because) t))
+
 (defun neoment-events-event-to-message (event)
   "Convert the message EVENT into a `neoment-message'.
 Replies are not resolved here."
@@ -218,6 +224,7 @@ Replies are not resolved here."
                          (alist-get 'formatted_body content)))
          (new-content (alist-get 'm.new_content content))
          (relates (alist-get 'm.relates_to content))
+         (redacted (neoment-events--redacted-p event))
          (redacted-by (neoment-events--get event 'unsigned 'redacted_because 'sender))
          (type (or (cdr (assoc (alist-get 'msgtype content)
                                neoment-events-attachment-types))
@@ -227,7 +234,7 @@ Replies are not resolved here."
     (when new-content
       (setq body (or (alist-get 'body new-content) body)
             formatted (or (alist-get 'formatted_body new-content) formatted)))
-    (when (neoment-events--get event 'unsigned 'redacted_because)
+    (when redacted
       (setq body (if (equal redacted-by (alist-get 'sender event))
                      "[Redacted]"
                    (format "[Redacted by %s]" (neoment-display-name redacted-by)))
@@ -238,10 +245,10 @@ Replies are not resolved here."
      :content body
      :formatted-content formatted
      :timestamp (alist-get 'origin_server_ts event)
-     :was-redacted (and (neoment-events--get event 'unsigned 'redacted_because) t)
+     :was-redacted redacted
      :age (neoment-events--get event 'unsigned 'age)
      :mentions (copy-sequence (neoment-events--get content 'm.mentions 'user_ids))
-     :attachment (and type (alist-get 'url content)
+     :attachment (and type (not redacted) (alist-get 'url content)
                       (neoment-events--attachment content type))
      :thread-root-id (and (equal (alist-get 'rel_type relates) "m.thread")
                           (alist-get 'event_id relates))
@@ -344,7 +351,10 @@ room changed."
          (relates (alist-get 'm.relates_to content))
          (event-ts (or (alist-get 'origin_server_ts event) 0)))
     (cond
-     ((not (stringp (alist-get 'body content))) nil)
+     ;; A server-redacted event has empty content but is still shown.
+     ((not (or (neoment-events--redacted-p event)
+               (stringp (alist-get 'body content))))
+      nil)
      ;; Edit
      ((equal (alist-get 'rel_type relates) "m.replace")
       (let* ((target-id (alist-get 'event_id relates))

@@ -406,6 +406,56 @@
     (should (equal (neoment-message-content (neoment-room-get-message room "$4"))
                    "[Redacted]"))))
 
+(ert-deftest neoment-events-redacted-no-attachment ()
+  (neoment-events-test
+    (neoment-events-handle
+     room (neoment-test-event "m.room.message" :id "$img"
+                              :content '((msgtype . "m.image") (body . "pic.png")
+                                         (url . "mxc://s/abc"))
+                              :unsigned '((redacted_because . ((sender . "@alice:s"))))))
+    (let ((m (neoment-room-get-message room "$img")))
+      (should (neoment-message-was-redacted m))
+      (should-not (neoment-message-attachment m))
+      (should (equal (neoment-message-content m) "[Redacted]")))))
+
+(ert-deftest neoment-events-server-redacted-messages ()
+  (neoment-events-test
+    (neoment-set-display-name "@mod:s" "Mod" 1)
+    ;; Redacted by a moderator: empty content, still shown.
+    (should (neoment-events-handle
+             room (neoment-test-event "m.room.message" :id "$a" :sender "@a:s"
+                                      :unsigned '((redacted_because . ((sender . "@mod:s")))))))
+    (let ((m (neoment-room-get-message room "$a")))
+      (should (equal (neoment-message-content m) "[Redacted by Mod]"))
+      (should (neoment-message-was-redacted m)))
+    ;; Redacted by its author.
+    (should (neoment-events-handle
+             room (neoment-test-event "m.room.message" :id "$b" :sender "@a:s"
+                                      :unsigned '((redacted_because . ((sender . "@a:s")))))))
+    (let ((m (neoment-room-get-message room "$b")))
+      (should (equal (neoment-message-content m) "[Redacted]"))
+      (should (neoment-message-was-redacted m)))
+    ;; Empty content without redaction: ignored.
+    (should-not (neoment-events-handle
+                 room (neoment-test-event "m.room.message" :id "$c" :sender "@a:s")))
+    (should-not (neoment-room-get-message room "$c"))))
+
+(ert-deftest neoment-events-server-redacted-history ()
+  (neoment-events-test
+    (should (neoment-events-handle
+             room (neoment-test-event "m.room.message" :id "$h" :sender "@a:s"
+                                      :unsigned '((redacted_because . ((sender . "@a:s")))))
+             t))
+    (let ((m (neoment-room-get-message room "$h")))
+      (should (equal (neoment-message-content m) "[Redacted]"))
+      (should (neoment-message-was-redacted m)))
+    ;; A later redaction of the already redacted message is ignored.
+    (should-not (neoment-events-handle
+                 room (neoment-test-event "m.room.redaction" :id "$x" :ts 2000
+                                          :content '((redacts . "$h") (reason . "spam")))))
+    (should (equal (neoment-message-content (neoment-room-get-message room "$h"))
+                   "[Redacted]"))))
+
 (ert-deftest neoment-events-attachments ()
   (neoment-events-test
     (cl-flet ((att (msgtype content &optional type)
@@ -837,6 +887,40 @@
                                                            (m.new_content . ((body . "hacked"))))))))))))))
           (should (equal (neoment-message-sender replied) "@bob:s"))
           (should (equal (neoment-message-content replied) "question")))))))
+
+(defun neoment-events-test-reply-fetch (fetched)
+  "Handle a reply to $orig, answer its fetch with FETCHED and return the reply."
+  (let ((pending nil) (room (neoment-get-room "!r:s")))
+    (neoment-test-with-http (lambda (args) (push args pending) 'pending)
+      (neoment-events-handle
+       room (neoment-events-test-text
+             "answer" :id "$reply" :ts 10
+             :extra '((m.relates_to . ((m.in_reply_to . ((event_id . "$orig"))))))))
+      (let ((req (seq-find (lambda (r) (string-search "/event/" (plist-get r :url)))
+                           pending)))
+        (funcall (plist-get req :callback) fetched)))
+    (neoment-room-get-message room "$reply")))
+
+(ert-deftest neoment-events-async-reply-redacted ()
+  (neoment-events-test
+    (neoment-set-display-name "@mod:s" "Mod" 1)
+    (let* ((reply (neoment-events-test-reply-fetch
+                   '(:ok ((type . "m.room.message") (event_id . "$orig") (sender . "@bob:s")
+                          (origin_server_ts . 5) (content)
+                          (unsigned . ((redacted_because . ((sender . "@mod:s")))))))))
+           (replied (neoment-message-replying-to reply)))
+      (should replied)
+      (should-not (neoment-message-placeholder replied))
+      (should (equal (neoment-message-sender replied) "@bob:s"))
+      (should (equal (neoment-message-content replied) "[Redacted by Mod]"))
+      (should (neoment-message-was-redacted replied)))))
+
+(ert-deftest neoment-events-async-reply-unavailable ()
+  (neoment-events-test
+    (let ((reply (neoment-events-test-reply-fetch
+                  '(:ok ((type . "m.room.message") (event_id . "$orig") (sender . "@bob:s")
+                         (origin_server_ts . 5) (content))))))
+      (should-not (neoment-message-replying-to reply)))))
 
 (ert-deftest neoment-events-display-name-fetch ()
   (let ((neoment--client nil) (requests 0) (changed nil))

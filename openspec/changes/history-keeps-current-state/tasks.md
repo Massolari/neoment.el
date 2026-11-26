@@ -17,9 +17,14 @@
 - [x] 3.1 Add tests for an old `leave` in history (member stays, "left the room" message is present) and an old `join` in history (non-member stays out, "joined the room" message is present). Also add one test that a newer display name isn't replaced by an older one from history. Verify with `make test` that the member tests fail first.
 - [x] 3.2 In the `m.room.member` branch of `neoment-events-handle`, skip the `puthash`/`remhash` on `neoment-room-members` when `is-history` is non-nil, and keep building and adding the membership message. Verify that the 3.1 tests pass.
 
-## 4. Integration check
+## 4. Display names learned from the server
 
-- [x] 4.1 Run the full suite with `make test`, then run `make compile` and `make lint`. Confirm that everything passes, including the existing `/sync` and refresh-state tests in `test/neoment-sync-test.el` and `test/neoment-rooms-test.el`, which must keep applying state.
+- [x] 4.1 Add tests that a name from `GET /profile` (`neoment-events-fetch-display-name`) and from `joined_members` (`neoment-room--fetch-members`) isn't replaced by an older name from a history `join`, and that a failed profile fetch still lets a member event supply the name. Verify with `make test` that the first two fail first.
+- [x] 4.2 Store names from `joined_members` and successful profile fetches with `neoment--now-ms` instead of 0. Verify that the 4.1 tests pass.
+
+## 5. Integration check
+
+- [x] 5.1 Run the full suite with `make test`, then run `make compile` and `make lint`. Confirm that everything passes, including the existing `/sync` and refresh-state tests in `test/neoment-sync-test.el` and `test/neoment-rooms-test.el`, which must keep applying state.
 
 ## Workflow follow-up
 

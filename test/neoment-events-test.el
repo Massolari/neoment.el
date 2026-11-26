@@ -478,6 +478,33 @@
      t)
     (should (equal (neoment-display-name "@bob:s") "Bob2"))))
 
+(ert-deftest neoment-events-history-keeps-fetched-display-name ()
+  ;; A name fetched from the profile is current, so an old name from
+  ;; history doesn't replace it.
+  (neoment-events-test
+    (remhash "@bob:s" (neoment-client-display-names neoment--client))
+    (neoment-test-with-http (lambda (_) '(:ok ((displayname . "Bob2"))))
+      (neoment-events-fetch-display-name "@bob:s"))
+    (should (equal (neoment-display-name "@bob:s") "Bob2"))
+    (neoment-events-handle-multiple
+     room (list (neoment-test-event "m.room.member" :ts 100 :sender "@bob:s"
+                                    :state-key "@bob:s"
+                                    :content '((membership . "join") (displayname . "Bob1"))))
+     t)
+    (should (equal (neoment-display-name "@bob:s") "Bob2"))))
+
+(ert-deftest neoment-events-failed-fetch-lets-member-event-name ()
+  (neoment-events-test
+    (remhash "@dan:s" (neoment-client-display-names neoment--client))
+    (neoment-test-with-http (lambda (_) '(:error (:status 404 :error "nope")))
+      (neoment-events-fetch-display-name "@dan:s"))
+    (neoment-events-handle-multiple
+     room (list (neoment-test-event "m.room.member" :ts 100 :sender "@dan:s"
+                                    :state-key "@dan:s"
+                                    :content '((membership . "join") (displayname . "Dan"))))
+     t)
+    (should (equal (neoment-display-name "@dan:s") "Dan"))))
+
 (ert-deftest neoment-events-sync-applies-state-after-history ()
   (neoment-events-test
     (neoment-events-handle-multiple

@@ -10,7 +10,7 @@ Two things already give the client its current state without help from history:
 
 So history never needs to fill in missing current state. It only adds older timeline entries.
 
-Display names from membership events already go through `neoment-set-display-name`, which keeps the newest name by timestamp. History can't break them.
+Display names from membership events already go through `neoment-set-display-name`, which keeps the newest name by timestamp. Names from `joined_members` and `GET /profile` used to be stored with timestamp 0, so any history event could replace them. They describe the present, so they are now stored with the time they were learned. A failed profile fetch keeps timestamp 0, so a member event can still supply the name.
 
 ## Goals / Non-Goals
 

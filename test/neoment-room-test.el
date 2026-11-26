@@ -816,6 +816,19 @@ NAME that ends on a glyph boundary."
       (should-not (neoment-room-is-tracked room))
       (should (equal (hash-table-keys (neoment-room-messages room)) '("$3"))))))
 
+(ert-deftest neoment-room-fetched-member-name-beats-history ()
+  ;; Names from joined_members are current, so history can't replace them.
+  (neoment-room-test
+    (neoment-test-with-http
+        (lambda (_) '(:ok ((joined (@new:s (display_name . "Newbie"))))))
+      (neoment-room--fetch-members "!r:s"))
+    (neoment-events-handle-multiple
+     room (list (neoment-test-event "m.room.member" :ts 100 :sender "@new:s"
+                                    :state-key "@new:s"
+                                    :content '((membership . "join") (displayname . "Oldie"))))
+     t)
+    (should (equal (neoment-display-name "@new:s") "Newbie"))))
+
 (ert-deftest neoment-room-open-same-display-name ()
   (neoment-room-test
     (setf (neoment-room-name (neoment-get-room "!other:s")) "dev")

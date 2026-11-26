@@ -76,8 +76,13 @@
          (when (eq client neoment--client)
            (let ((name (neoment-json-get (plist-get result :ok) 'displayname)))
              ;; Remember failures too, so the name is not fetched again.
+             ;; A fetched name is current, so it is newer than any
+             ;; name from history.  A failure keeps timestamp 0, so a
+             ;; member event can still supply the name.
              (unless (neoment-has-display-name user-id)
-               (puthash user-id (cons (and (stringp name) name) 0)
+               (puthash user-id (if (stringp name)
+                                    (cons name (neoment--now-ms))
+                                  (cons nil 0))
                         (neoment-client-display-names client)))
              (when (stringp name)
                (neoment-client-mark-room-changed nil)))))))))

@@ -11,7 +11,7 @@ Neoment applies every `m.replace` edit, whoever sent it, so any room member can 
 - Pending edits (edits that arrive before their target) get the same checks when the target arrives. A rejected edit is dropped, not kept pending.
 - Edits embedded in `unsigned["m.relations"]["m.replace"]` get the same checks.
 - When a replied-to event is fetched, its bundled `m.replace` replacement SHALL be used only when the replacement's sender matches the event's sender. Otherwise the original event is shown. Today the replacement is used as-is, including its `sender`, so a foreign replacement would also change who the reply quote seems to come from.
-- Redacting an edit event SHALL remove the edited message only when the edit's sender matches the message's sender. Today, redacting any edit removes its target from the room. Once foreign edits are ignored, this would still let any member delete another member's message by sending an edit and then redacting it. Issue #15 does not mention this case. It is included because it is the same spoofing vector.
+- Redacting an edit event SHALL remove the edited message only when the edit's sender matches the message's sender and the message is not a state message. Today, redacting any edit removes its target from the room. Once foreign edits are ignored, this would still let any member delete another member's message by sending an edit and then redacting it. Issue #15 does not mention this case. It is included because it is the same spoofing vector.
 
 Out of scope: other `m.replace` validity rules from the Matrix spec (matching `type`, no `state_key`, the target not being an edit itself), and edits of encrypted events.
 
@@ -23,7 +23,7 @@ None.
 
 ### Modified Capabilities
 
-- `matrix-events`: a new **Edit validation** requirement ignores edits from another sender and edits of state messages (the existing **Edits** requirement is unchanged), the **Replies** requirement uses a fetched event's bundled replacement only when the senders match, and the **Redactions** requirement removes an edited message only for a redacted edit from the message's own sender.
+- `matrix-events`: a new **Edit validation** requirement ignores edits from another sender and edits of state messages (the existing **Edits** requirement is unchanged), the **Replies** requirement uses a fetched event's bundled replacement only when the senders match, and the **Redactions** requirement removes an edited message only for a redacted edit from the message's own sender of a non-state message.
 
 ## Impact
 

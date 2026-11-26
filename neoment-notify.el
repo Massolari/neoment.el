@@ -111,6 +111,7 @@ LEVEL is `info' (the default), `warn' or `error'."
   "Remember MESSAGE as the newest incoming message of ROOM."
   (neoment-notify--ensure-client)
   (unless (or (neoment-message-is-state message)
+              (neoment-message-was-redacted message)
               (equal (neoment-message-sender message)
                      (neoment-client-user-id neoment--client)))
     (let ((old (gethash (neoment-room-id room) neoment-notify--candidates)))
@@ -134,6 +135,7 @@ It must be newer than the read receipt and the last notification."
          (user (neoment-client-user-id neoment--client)))
     (seq-find (lambda (msg)
                 (and (not (neoment-message-is-state msg))
+                     (not (neoment-message-was-redacted msg))
                      (not (equal (neoment-message-sender msg) user))
                      (> (or (neoment-message-timestamp msg) 0) limit)))
               (reverse (neoment-room-sorted-messages room)))))

@@ -18,7 +18,6 @@ See proposal.md (Why). The relevant code is all in `neoment-events.el`:
 
 **Non-Goals:**
 - Unifying the two text formats. Live redaction shows `[Redacted]` / `[Redacted: <reason>]`, while server-redacted messages show `[Redacted]` / `[Redacted by <name>]`. Both formats are in the spec today, and changing either one is a separate, user-visible decision.
-- Excluding redacted messages from desktop-notification candidates. Notifications fire only when the server's counts rise, and a server-redacted event normally does not raise them.
 - Hiding redacted edits or redacted thread replies. In current room versions, redaction strips `m.relates_to`, so the client cannot tell them apart from ordinary messages (see Risks).
 
 ## Decisions
@@ -31,14 +30,13 @@ See proposal.md (Why). The relevant code is all in `neoment-events.el`:
 3. **Reply fetch accepts `(or (alist-get 'content data) (neoment-events--redacted-p data))`**, and `fill-message` copies `was-redacted`. The replied message then carries the redacted text and can be styled like any redacted message. The existing reply prefix rendering (`┃ <sender>:` / `┃ <line>`) needs no change.
    - *Alternative:* render a fixed "replied message was deleted" string. Rejected because it would add a new UI string and diverge from the redacted text used in the timeline.
 
-4. **Notification candidates are left as they are** (see Non-Goals). The `t` branch still calls `neoment-notify-add-candidate` for non-history events.
+4. **Redacted messages are never notification text.** `neoment-notify-add-candidate` and the stored-message fallback skip messages marked `was_redacted`. Otherwise, when one sync brings a real message that raises the count and a later already-redacted one, the notification would read `[Redacted…]` instead of the real text.
 5. **A server-redacted message is not activity.** The `t` branch skips `last_activity` and `unread_activity` for it, so a moderator clean-up neither marks the room unread nor moves it up the room list. This matches the room buffer, whose unread marker already skips redacted messages.
 6. **The reply fetch ignores a bundled edit on a redacted event**, so the quote never shows pre-redaction text that the timeline hides.
 
 ## Risks / Trade-offs
 
 - [Redacted edits and redacted thread replies now appear as standalone `[Redacted]` messages in the main timeline, because their relation was stripped by the server.] → This matches what other clients that show redactions do, and it is strictly better than the current behaviour, where a redacted *normal* message vanishes. If it proves noisy, a later change could hide redacted events whose `redacted_because` arrives together with a known edit relation in `unsigned`.
-- [Notification bodies of `[Redacted…]` could appear in rare cases (a count increase whose newest candidate is a server-redacted message).] → Accepted for now. It is easy to filter later in `neoment-notify-add-candidate` if it shows up.
 - [Stored rooms (neoment-storage) saved before this change lack these messages.] → No migration is needed. They reappear the next time history or sync delivers the events.
 
 ## Migration Plan

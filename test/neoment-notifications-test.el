@@ -276,6 +276,23 @@ Each spec is (KIND RULE-ID ENABLED ACTIONS [CONDITIONS])."
     (neoment-notify-add-candidate room (neoment-notif-test-message "$3" "@me:s" "mine" 3))
     (neoment-notify-room-counts-changed room 0 0 2 0)
     (should (equal sent '(("[dev] Alice" "hi")))))
+  ;; A redacted message never replaces a real candidate or the fallback.
+  (neoment-notif-decision-test
+    (neoment-notify-clear-candidates)
+    (neoment-notify-add-candidate room (neoment-notif-test-message "$1" "@alice:s" "hi" 1))
+    (let ((r (neoment-notif-test-message "$r" "@alice:s" "[Redacted]" 2)))
+      (setf (neoment-message-was-redacted r) t)
+      (neoment-notify-add-candidate room r))
+    (neoment-notify-room-counts-changed room 0 0 1 0)
+    (should (equal sent '(("[dev] Alice" "hi")))))
+  (neoment-notif-decision-test
+    (puthash "$s" (neoment-notif-test-message "$s" "@alice:s" "stored" 50) (neoment-room-messages room))
+    (let ((r (neoment-notif-test-message "$r" "@alice:s" "[Redacted]" 60)))
+      (setf (neoment-message-was-redacted r) t)
+      (puthash "$r" r (neoment-room-messages room)))
+    (setf (neoment-room-read-receipt room) '(:event-id "$x" :ts 10))
+    (neoment-notify-room-counts-changed room 0 0 1 0)
+    (should (equal (car sent) '("[dev] Alice" "stored"))))
   ;; Unchanged or decreasing counts.
   (neoment-notif-decision-test
     (neoment-notify-add-candidate room (neoment-notif-test-message "$1" "@alice:s" "hi" 1))

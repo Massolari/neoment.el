@@ -20,7 +20,7 @@
 
 - [x] 3.1 Skip last and unread activity for server-redacted messages in the `t` branch of `neoment-events--handle-message`. Verify with `neoment-events-server-redacted-not-activity`.
 - [x] 3.2 Ignore a bundled `m.replace` on a redacted event in `neoment-events--event-message-fields`, and show `[Redacted]` when `redacted_because` has no sender. Verify with `neoment-events-async-reply-redacted-with-bundled-edit` and `neoment-events-server-redacted-unknown-redactor`.
-- [x] 3.3 Skip `was_redacted` messages in `neoment-notify-add-candidate` and `neoment-notify--fallback-message`, and skip a candidate redacted before sending. Keep the sync's candidates as a newest-first list per room so an older real message is still found in untracked rooms. Verify with the redacted cases in `neoment-notif-decisions`.
+- [x] 3.3 Skip `was_redacted` messages in `neoment-notify-add-candidate` and `neoment-notify--fallback-message`, and skip a candidate redacted before sending. Keep the sync's candidates as a newest-first list per room so an older real message is still found in untracked rooms. Drop candidates on every redaction, and in untracked rooms redact the stored last message instead of adding a pending redaction. Verify end to end with `neoment-notif-redacted-in-same-sync`. Verify with the redacted cases in `neoment-notif-decisions`.
 
 ## 4. Integration check
 

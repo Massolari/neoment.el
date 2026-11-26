@@ -125,6 +125,19 @@ skipped, even in untracked rooms that only store their last message.")
                (nconc (nreverse newer) (cons message older))
                neoment-notify--candidates))))
 
+(defun neoment-notify-forget-candidate (room event-id)
+  "Drop the candidates of ROOM for the redacted event EVENT-ID.
+It matches a message's own id and the id of an edit applied to it."
+  (neoment-notify--ensure-client)
+  (let ((room-id (neoment-room-id room)))
+    (when-let* ((candidates (gethash room-id neoment-notify--candidates)))
+      (puthash room-id
+               (seq-remove (lambda (m)
+                             (or (equal (neoment-message-id m) event-id)
+                                 (equal (neoment-message-effective-id m) event-id)))
+                           candidates)
+               neoment-notify--candidates))))
+
 (defun neoment-notify--title (room-name sender-name)
   "Return the notification title for SENDER-NAME in ROOM-NAME."
   (if (equal room-name sender-name)

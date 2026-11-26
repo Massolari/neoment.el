@@ -416,15 +416,46 @@ room changed."
               (neoment-room-set-unread-activity room event-ts id age))))
         t)))))
 
+(defun neoment-events--redact-message (room redacts event)
+  "Replace the message REDACTS of ROOM by the text of redaction EVENT.
+Return the message, or nil when ROOM does not store it."
+  (let ((message (neoment-room-get-message room redacts))
+        (reason (neoment-events--get event 'content 'reason)))
+    (when message
+      (let ((text (if (stringp reason)
+                      (format "[Redacted: %s]" reason)
+                    "[Redacted]")))
+        (setf (neoment-message-content message) text
+              (neoment-message-formatted-content message) text
+              (neoment-message-was-redacted message) t
+              (neoment-message-attachment message) nil
+              ;; Drop any applied edit, so the message is not
+              ;; shown as edited and keeps its original id.
+              (neoment-message-edit-data message) nil
+              (neoment-message-id message) redacts)))
+    message))
+
 (defun neoment-events--handle-redaction (room event)
   "Handle the redaction EVENT of ROOM.  Return non-nil when it changed."
   (let* ((redacts (or (alist-get 'redacts event)
                       (neoment-events--get event 'content 'redacts)))
          (target (gethash redacts (neoment-room-events room))))
+    ;; Never notify with a redacted message, even in an untracked room
+    ;; whose raw events are not kept.
+    (neoment-notify-forget-candidate room redacts)
     (cond
-     ((null target)
+     ((and (null target) (neoment-room-is-tracked room))
       (neoment-events--add-pending room redacts event)
       nil)
+     ;; An untracked room keeps no raw events, only its last message:
+     ;; redact that message when it is the target.  The target cannot
+     ;; arrive later, so nothing is kept pending.
+     ((null target)
+      (let ((message (neoment-room-get-message room redacts)))
+        (and message
+             (not (neoment-message-was-redacted message))
+             (neoment-events--redact-message room redacts event)
+             t)))
      ((null (alist-get 'content target)) nil)
      ((equal (alist-get 'type target) "m.room.message")
       (let ((relates (neoment-events--get target 'content 'm.relates_to))
@@ -444,21 +475,7 @@ room changed."
                         (alist-get 'sender target) (neoment-message-sender edited)))
                   (remhash edited-id (neoment-room-messages room))
                 (setq changed nil)))
-          (let ((message (neoment-room-get-message room redacts))
-                (reason (neoment-events--get event 'content 'reason))
-                text)
-            (setq text (if (stringp reason)
-                           (format "[Redacted: %s]" reason)
-                         "[Redacted]"))
-            (when message
-              (setf (neoment-message-content message) text
-                    (neoment-message-formatted-content message) text
-                    (neoment-message-was-redacted message) t
-                    (neoment-message-attachment message) nil
-                    ;; Drop any applied edit, so the message is not
-                    ;; shown as edited and keeps its original id.
-                    (neoment-message-edit-data message) nil
-                    (neoment-message-id message) redacts))))
+          (neoment-events--redact-message room redacts event))
         ;; The target event is now empty, so it is not redacted twice.
         (setf (alist-get 'content target) nil)
         changed))

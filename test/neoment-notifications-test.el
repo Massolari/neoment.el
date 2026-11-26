@@ -10,6 +10,7 @@
 (require 'test-helper)
 (require 'neoment-notification-settings)
 (require 'neoment-notify)
+(require 'neoment-events)
 
 (defun neoment-notif-test-rules (&rest specs)
   "Return a push ruleset built from SPECS.
@@ -267,6 +268,41 @@ Each spec is (KIND RULE-ID ENABLED ACTIONS [CONDITIONS])."
   "Return a message ID by SENDER with CONTENT at TS."
   (neoment-message--create :id id :sender sender :content content :timestamp ts))
 
+(defun neoment-notif-test-sync (room &rest events)
+  "Apply EVENTS to ROOM as one live sync timeline.
+Each event is (ID BODY TS) for a message from Alice, or (redact ID TS)."
+  (neoment-events-handle-multiple
+   room
+   (mapcar (lambda (e)
+             (if (eq (car e) 'redact)
+                 (neoment-test-event "m.room.redaction" :id (format "$x%s" (nth 1 e))
+                                     :ts (nth 2 e) :content `((redacts . ,(nth 1 e))))
+               (neoment-test-event "m.room.message" :id (nth 0 e) :ts (nth 2 e)
+                                   :content `((msgtype . "m.text") (body . ,(nth 1 e))))))
+           events)))
+
+;; A message redacted live in the same sync is never notification text,
+;; whether the room is open (tracked) or not.
+(ert-deftest neoment-notif-redacted-in-same-sync ()
+  (dolist (tracked '(nil t))
+    (neoment-notif-decision-test
+      (neoment-notify-clear-candidates)
+      (neoment-room-set-tracked room tracked)
+      (setf (neoment-room-read-receipt room) '(:event-id "$x" :ts 1))
+      (neoment-notif-test-sync room '("$1" "hi" 10) '("$2" "spam" 20) '(redact "$2" 30))
+      (neoment-notify-room-counts-changed room 0 0 2 0)
+      (should (equal sent '(("[dev] Alice" "hi"))))
+      (unless tracked
+        (should (zerop (hash-table-count (neoment-room-pending-events room))))))
+    ;; Only the redacted message: generic text, never the spam.
+    (neoment-notif-decision-test
+      (neoment-notify-clear-candidates)
+      (neoment-room-set-tracked room tracked)
+      (setf (neoment-room-read-receipt room) '(:event-id "$x" :ts 1))
+      (neoment-notif-test-sync room '("$2" "spam" 20) '(redact "$2" 30))
+      (neoment-notify-room-counts-changed room 0 0 1 0)
+      (should (equal sent '(("dev" "New notification")))))))
+
 (ert-deftest neoment-notif-decisions ()
   ;; Rising count with a candidate.
   (neoment-notif-decision-test
@@ -302,20 +338,6 @@ Each spec is (KIND RULE-ID ENABLED ACTIONS [CONDITIONS])."
       (neoment-notify-add-candidate room spam)
       (setf (neoment-message-was-redacted spam) t
             (neoment-message-content spam) "[Redacted: spam]"))
-    (setf (neoment-room-read-receipt room) '(:event-id "$x" :ts 10))
-    (neoment-notify-room-counts-changed room 0 0 1 0)
-    (should (equal sent '(("[dev] Alice" "hi")))))
-  ;; Same, in an untracked room that only stores its last message.
-  (neoment-notif-decision-test
-    (neoment-notify-clear-candidates)
-    (neoment-room-set-tracked room nil)
-    (let ((hi (neoment-notif-test-message "$1" "@alice:s" "hi" 50))
-          (spam (neoment-notif-test-message "$2" "@alice:s" "spam" 60)))
-      (dolist (m (list hi spam))
-        (neoment-room-add-message room m)
-        (neoment-notify-add-candidate room m))
-      (should-not (neoment-room-get-message room "$1"))
-      (setf (neoment-message-was-redacted spam) t))
     (setf (neoment-room-read-receipt room) '(:event-id "$x" :ts 10))
     (neoment-notify-room-counts-changed room 0 0 1 0)
     (should (equal sent '(("[dev] Alice" "hi")))))

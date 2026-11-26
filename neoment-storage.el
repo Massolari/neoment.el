@@ -254,7 +254,7 @@ Each alist maps a name (string) to non-nil when folded."
       (topic . ,(or (neoment-room-topic room) ""))
       (events)
       (pending_events)
-      (messages . ,(and last (list (cons (neoment-message-id last)
+      (messages . ,(and last (list (cons (neoment-message-effective-id last)
                                          (neoment-storage--message-to-json last)))))
       (last_activity . ,(if (neoment-room-last-activity room)
                             (neoment-storage--plist-to-alist
@@ -335,9 +335,11 @@ Each alist maps a name (string) to non-nil when folded."
                          (neoment-storage--parse-bool (plist-get receipt :is-local))))))
     (dolist (pair (alist-get 'members data))
       (puthash (symbol-name (car pair)) t (neoment-room-members room)))
+    ;; Key by the loaded message's effective id, not the stored key, so
+    ;; caches written with an edit's id as key load correctly.
     (dolist (pair (alist-get 'messages data))
       (let ((msg (neoment-storage--message-from-json (cdr pair))))
-        (puthash (symbol-name (car pair)) msg (neoment-room-messages room))))
+        (puthash (neoment-message-effective-id msg) msg (neoment-room-messages room))))
     room))
 
 (defun neoment-storage--invited-room-to-json (room)

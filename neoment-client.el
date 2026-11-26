@@ -219,13 +219,13 @@ An untracked room only keeps its newest non-state message."
   (let ((messages (neoment-room-messages room)))
     (cond
      ((neoment-room-is-tracked room)
-      (puthash (neoment-message-id message) message messages))
+      (puthash (neoment-message-effective-id message) message messages))
      ((neoment-message-is-state message))
      (t
       (let ((last (neoment-room-last-message room)))
         (when (or (null last) (neoment-message< last message))
           (clrhash messages)
-          (puthash (neoment-message-id message) message messages)))))
+          (puthash (neoment-message-effective-id message) message messages)))))
     message))
 
 (defun neoment-room-set-tracked (room tracked)
@@ -235,7 +235,8 @@ An untracked room only keeps its newest non-state message."
     (let ((last (neoment-room-last-message room)))
       (clrhash (neoment-room-messages room))
       (when last
-        (puthash (neoment-message-id last) last (neoment-room-messages room))))
+        (puthash (neoment-message-effective-id last) last
+                 (neoment-room-messages room))))
     (clrhash (neoment-room-events room))
     (clrhash (neoment-room-pending-events room))
     (setf (neoment-room-prev-batch room) nil))

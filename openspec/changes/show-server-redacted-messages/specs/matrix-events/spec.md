@@ -12,15 +12,7 @@
 ## ADDED Requirements
 
 ### Requirement: Server-redacted messages
-A message event that arrives already redacted (`unsigned.redacted_because`, typically with empty `content`) through sync, history or a single-event fetch SHALL become a message, with the redacted content described in Message content. It SHALL be marked `was_redacted` and carry no attachment, exactly like a message redacted live. It SHALL NOT update the room's last or unread activity, and SHALL NOT be used as desktop-notification text (neither as the candidate nor as the stored-message fallback). When `redacted_because` has no sender, the content is `[Redacted]`.
-
-#### Scenario: Not activity
-- **WHEN** a server-redacted message from another user arrives after message `$a`
-- **THEN** the room's last and unread activity stay at `$a`
-
-#### Scenario: Not notification text
-- **WHEN** one sync brings Bob's message `hi` and then a later server-redacted message, and the notification count rises
-- **THEN** the desktop notification shows `hi`
+A message event that arrives already redacted (`unsigned.redacted_because`, typically with empty `content`) through sync, history or a single-event fetch SHALL become a message, with the redacted content described in Message content. It SHALL be marked `was_redacted` and carry no attachment, exactly like a message redacted live. When `redacted_because` has no sender, the content is `[Redacted]`.
 
 #### Scenario: Already redacted on the server
 - **WHEN** an `m.room.message` arrives through sync or history with empty `content` and `unsigned.redacted_because.sender` = `@mod:s`, sent by `@a:s`
@@ -33,6 +25,13 @@ A message event that arrives already redacted (`unsigned.redacted_because`, typi
 #### Scenario: Empty content without redaction
 - **WHEN** an `m.room.message` arrives with no `content.body` and no `unsigned.redacted_because`
 - **THEN** no message is added
+
+### Requirement: Server-redacted messages are not activity
+A server-redacted message SHALL NOT update the room's last or unread activity. It is also not used as desktop-notification text (see `desktop-notifications`).
+
+#### Scenario: Not activity
+- **WHEN** a server-redacted message from another user arrives after message `$a`
+- **THEN** the room's last and unread activity stay at `$a`
 
 ### Requirement: Replies to redacted messages
 When the asynchronously fetched replied event carries `unsigned.redacted_because`, it SHALL fill the reply as a redacted message (see Message content) and SHALL NOT be treated as unavailable, even though its `content` is empty. A bundled `m.replace` on a redacted fetched event SHALL be ignored.

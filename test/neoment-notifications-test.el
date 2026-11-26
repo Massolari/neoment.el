@@ -293,6 +293,18 @@ Each spec is (KIND RULE-ID ENABLED ACTIONS [CONDITIONS])."
     (setf (neoment-room-read-receipt room) '(:event-id "$x" :ts 10))
     (neoment-notify-room-counts-changed room 0 0 1 0)
     (should (equal (car sent) '("[dev] Alice" "stored"))))
+  ;; A candidate redacted live after it was added falls back to stored text.
+  (neoment-notif-decision-test
+    (neoment-notify-clear-candidates)
+    (puthash "$1" (neoment-notif-test-message "$1" "@alice:s" "hi" 50) (neoment-room-messages room))
+    (let ((spam (neoment-notif-test-message "$2" "@alice:s" "spam" 60)))
+      (puthash "$2" spam (neoment-room-messages room))
+      (neoment-notify-add-candidate room spam)
+      (setf (neoment-message-was-redacted spam) t
+            (neoment-message-content spam) "[Redacted: spam]"))
+    (setf (neoment-room-read-receipt room) '(:event-id "$x" :ts 10))
+    (neoment-notify-room-counts-changed room 0 0 1 0)
+    (should (equal sent '(("[dev] Alice" "hi")))))
   ;; Unchanged or decreasing counts.
   (neoment-notif-decision-test
     (neoment-notify-add-candidate room (neoment-notif-test-message "$1" "@alice:s" "hi" 1))

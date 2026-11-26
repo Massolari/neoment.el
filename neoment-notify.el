@@ -155,7 +155,11 @@ NEW-NOTIFICATIONS and NEW-HIGHLIGHTS the counts after it."
             (> (or new-highlights 0) (or old-highlights 0)))
     (let* ((room-id (neoment-room-id room))
            (candidate (gethash room-id neoment-notify--candidates))
-           (msg (or candidate (neoment-notify--fallback-message room)))
+           ;; The candidate may have been redacted live after it was added.
+           (msg (or (and candidate
+                         (not (neoment-message-was-redacted candidate))
+                         candidate)
+                    (neoment-notify--fallback-message room)))
            (room-name (neoment-room-display-name room-id)))
       (unless (neoment-notify--suppressed-p room msg)
         (puthash room-id

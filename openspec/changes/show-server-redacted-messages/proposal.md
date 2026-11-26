@@ -9,6 +9,9 @@ A message redacted on the server reaches the client with an empty `content` and 
 - An `m.room.message` / `m.sticker` event that carries `unsigned.redacted_because` SHALL become a message even when it has no `content.body`. It shows `[Redacted]`, or `[Redacted by <name>]` when the redactor is not the author, as the spec already describes.
 - Such a message SHALL be marked `was_redacted`, as a live redaction is. Its header is then dimmed, and it does not count as a visible message for the "New messages" separator.
 - When the asynchronously fetched replied event is a redacted event, the reply SHALL show the redacted quote (`┃ <sender>:` / `┃ [Redacted…]`) instead of dropping it. The filled placeholder SHALL also carry `was_redacted`.
+- A server-redacted message SHALL NOT update the room's last or unread activity, so a moderator clean-up does not mark the room unread or reorder the room list.
+- A bundled `m.replace` on a redacted fetched replied event SHALL be ignored, so the quote never shows pre-redaction text.
+- A message marked `was_redacted` SHALL NOT be used as desktop-notification text.
 - Events without `content.body` and without `redacted_because` are still ignored, so behaviour for malformed or unknown events does not change.
 
 ## Capabilities
@@ -19,10 +22,12 @@ _None._
 
 ### Modified Capabilities
 
-- `matrix-events`: The "Message content" requirement gains an exception to the "events without `content.body` SHALL be ignored" rule for redacted events. Two requirements are added: "Server-redacted messages" (the message is kept and marked `was_redacted` with no attachment) and "Replies to redacted messages" (a fetched replied event that is redacted still fills the reply quote).
+- `matrix-events`: The "Message content" requirement gains an exception to the "events without `content.body` SHALL be ignored" rule for redacted events. Three requirements are added: "Server-redacted messages are not activity", "Server-redacted messages" (the message is kept and marked `was_redacted` with no attachment) and "Replies to redacted messages" (a fetched replied event that is redacted still fills the reply quote).
+- `desktop-notifications`: adds "Redacted messages are not notification text" (the candidate and the stored-message fallback skip messages marked `was_redacted`).
 
 ## Impact
 
 - Code: `neoment-events.el`, specifically `neoment-events--handle-message` (the body guard), `neoment-events-event-to-message` (set `was-redacted`), `neoment-events--reply-to` (the fetch callback's "unavailable" check) and `neoment-events--fill-message` (copy `was-redacted`).
-- Tests: `test/neoment-events-test.el` (message content and async reply cases).
+- Code: `neoment-notify.el` (`neoment-notify-add-candidate`, `neoment-notify--fallback-message`, `neoment-notify-room-counts-changed`).
+- Tests: `test/neoment-events-test.el` (message content, activity and async reply cases) and `test/neoment-notifications-test.el` (notification text).
 - No API, storage format or dependency changes. `was_redacted` is already persisted by `neoment-storage.el`.

@@ -16,9 +16,15 @@
 - [x] 2.2 Make `neoment-events--fill-message` copy `was-redacted` from the source message. Verify in the same test that the filled replied message has `was-redacted` set.
 - [x] 2.3 Add an ERT case where the fetch returns an event with no `content` and no `redacted_because`, and assert that the reply loses `replying-to`. This guards the "Replied event unavailable" scenario.
 
-## 3. Integration check
+## 3. Review follow-ups
 
-- [x] 3.1 Run `make all` (compile, lint, test) and confirm it finishes without byte-compile warnings, lint errors or test failures.
+- [x] 3.1 Skip last and unread activity for server-redacted messages in the `t` branch of `neoment-events--handle-message`. Verify with `neoment-events-server-redacted-not-activity`.
+- [x] 3.2 Ignore a bundled `m.replace` on a redacted event in `neoment-events--event-message-fields`, and show `[Redacted]` when `redacted_because` has no sender. Verify with `neoment-events-async-reply-redacted-with-bundled-edit` and `neoment-events-server-redacted-unknown-redactor`.
+- [x] 3.3 Skip `was_redacted` messages in `neoment-notify-add-candidate` and `neoment-notify--fallback-message`, and drop a candidate redacted before sending. Verify with the redacted cases in `neoment-notif-decisions`.
+
+## 4. Integration check
+
+- [x] 4.1 Run `make all` (compile, lint, test) and confirm it finishes without byte-compile warnings, lint errors or test failures.
 
 ## Workflow follow-up
 

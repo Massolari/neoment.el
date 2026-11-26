@@ -229,6 +229,7 @@ Replies are not resolved here."
      :content body
      :formatted-content formatted
      :timestamp (alist-get 'origin_server_ts event)
+     :was-redacted (and (neoment-events--get event 'unsigned 'redacted_because) t)
      :age (neoment-events--get event 'unsigned 'age)
      :mentions (copy-sequence (neoment-events--get content 'm.mentions 'user_ids))
      :attachment (and type (alist-get 'url content)

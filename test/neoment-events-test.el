@@ -367,6 +367,19 @@
       (should (equal (neoment-message-id m) "$s"))
       (should-not (neoment-message-edit-data m)))))
 
+(ert-deftest neoment-events-edit-of-event-redacted-on-arrival ()
+  (neoment-events-test
+    ;; The event arrives already redacted (`unsigned.redacted_because').
+    (neoment-events-handle
+     room (neoment-events-test-text "secret" :id "$s"
+                                    :unsigned '((redacted_because . ((sender . "@alice:s"))))))
+    (should (neoment-message-was-redacted (neoment-room-get-message room "$s")))
+    (should-not (neoment-events-handle room (neoment-events-test-edit "$e" "$s" "secret2" 3)))
+    (let ((m (neoment-room-get-message room "$s")))
+      (should (equal (neoment-message-content m) "[Redacted]"))
+      (should (equal (neoment-message-id m) "$s"))
+      (should-not (neoment-message-edit-data m)))))
+
 (ert-deftest neoment-events-pending-redaction-then-history-edit ()
   (neoment-events-test
     ;; The redaction arrives through sync before its target is known.

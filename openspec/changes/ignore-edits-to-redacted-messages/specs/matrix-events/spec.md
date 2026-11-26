@@ -17,3 +17,6 @@ An `m.replace` relation SHALL change the target's content to `m.new_content`, se
 - **WHEN** a redaction of unknown `$s` is pending, and a history page then delivers `$s` and a later edit of `$s`
 - **THEN** after the page is handled the content of `$s` is `[Redacted]` and `was_redacted` is set
 
+#### Scenario: Edit of an event redacted on arrival
+- **WHEN** event `$s` arrives with `unsigned.redacted_because` and then an edit of `$s` arrives
+- **THEN** `$s` has `was_redacted` set, its content stays `[Redacted]` and its id stays `$s`

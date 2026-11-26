@@ -465,9 +465,10 @@
 
 ;;;; 3.4 Edits, redactions and reactions
 
-(defun neoment-events-test-edit (id target body ts)
-  "Return an edit event ID of TARGET to BODY at TS."
+(defun neoment-events-test-edit (id target body ts &optional sender)
+  "Return an edit event ID of TARGET to BODY at TS by SENDER (default @alice:s)."
   (neoment-events-test-text (concat "* " body) :id id :ts ts
+                            :sender (or sender "@alice:s")
                             :extra `((m.new_content . ((msgtype . "m.text") (body . ,body)))
                                      (m.relates_to . ((rel_type . "m.replace")
                                                       (event_id . ,target))))))
@@ -497,6 +498,76 @@
                  "orig" :id "$emb" :ts 400
                  :unsigned `((m.relations . ((m.replace . ,(neoment-events-test-edit "$embe" "$emb" "fixed" 401))))))))
     (should (equal (neoment-message-content (neoment-room-get-message room "$emb")) "fixed"))))
+
+(ert-deftest neoment-events-same-sender-p ()
+  (should (neoment-events--same-sender-p "@a:s" "@a:s"))
+  (should-not (neoment-events--same-sender-p "@a:s" "@b:s"))
+  (should-not (neoment-events--same-sender-p nil nil)))
+
+(ert-deftest neoment-events-edits-foreign-sender ()
+  (neoment-events-test
+    ;; Live edit from another sender.
+    (neoment-events-handle-multiple room (list (neoment-events-test-text "hello" :id "$m" :ts 1)))
+    (should-not (neoment-events-handle-multiple
+                 room (list (neoment-events-test-edit "$e" "$m" "hacked" 2 "@mallory:s"))))
+    (let ((m (neoment-room-get-message room "$m")))
+      (should (equal (neoment-message-content m) "hello"))
+      (should (equal (neoment-message-id m) "$m"))
+      (should-not (neoment-message-edit-data m)))
+    ;; Pending edit from another sender is dropped when the target arrives.
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-edit "$pe" "$later" "hacked" 20 "@mallory:s")))
+    (should (gethash "$later" (neoment-room-pending-events room)))
+    (neoment-events-handle-multiple room (list (neoment-events-test-text "orig" :id "$later" :ts 10)))
+    (should (equal (neoment-message-content (neoment-room-get-message room "$later")) "orig"))
+    (should-not (gethash "$later" (neoment-room-pending-events room)))
+    ;; Embedded edit from another sender.
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-text
+                 "orig" :id "$emb" :ts 30
+                 :unsigned `((m.relations
+                              . ((m.replace . ,(neoment-events-test-edit
+                                                "$embe" "$emb" "hacked" 31 "@mallory:s"))))))))
+    (should (equal (neoment-message-content (neoment-room-get-message room "$emb")) "orig"))))
+
+(ert-deftest neoment-events-edits-state-target ()
+  (neoment-events-test
+    (let ((member (neoment-events-test-member "join" "@alice:s" "@alice:s")))
+      (neoment-events-handle-multiple room (list member))
+      (let* ((id (alist-get 'event_id member))
+             (m (neoment-room-get-message room id))
+             (before (neoment-message-content m)))
+        (should (neoment-message-is-state m))
+        (neoment-events-handle-multiple
+         room (list (neoment-events-test-edit "$se" id "hacked" 2000)))
+        (should (equal (neoment-message-content (neoment-room-get-message room id)) before))
+        (should-not (neoment-message-edit-data (neoment-room-get-message room id)))))))
+
+(ert-deftest neoment-events-redact-foreign-edit ()
+  (neoment-events-test
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-text "hello" :id "$m" :ts 1)
+                (neoment-events-test-edit "$e" "$m" "hacked" 2 "@mallory:s")))
+    (should-not (neoment-events-handle
+                 room (neoment-test-event "m.room.redaction" :id "$x" :ts 3 :sender "@mallory:s"
+                                          :content '((redacts . "$e")))))
+    (let ((m (neoment-room-get-message room "$m")))
+      (should m)
+      (should (equal (neoment-message-content m) "hello")))))
+
+(ert-deftest neoment-events-redact-state-edit ()
+  (neoment-events-test
+    (let* ((member (neoment-events-test-member "join" "@alice:s" "@alice:s"))
+           (id (alist-get 'event_id member)))
+      (neoment-events-handle-multiple
+       room (list member (neoment-events-test-edit "$se" id "hacked" 2000)))
+      (let ((before (neoment-message-content (neoment-room-get-message room id))))
+        (should-not (neoment-events-handle
+                     room (neoment-test-event "m.room.redaction" :id "$x" :ts 3000
+                                              :content '((redacts . "$se")))))
+        (let ((m (neoment-room-get-message room id)))
+          (should m)
+          (should (equal (neoment-message-content m) before)))))))
 
 (ert-deftest neoment-events-redactions ()
   (neoment-events-test
@@ -739,6 +810,33 @@
           (should (equal (neoment-message-content replied) "q2"))
           (should (equal (neoment-message-id replied) "$orig"))
           (should (member "!r:s" changed)))))))
+
+(ert-deftest neoment-events-async-reply-foreign-replacement ()
+  (let ((neoment--client nil) (pending nil))
+    (neoment-test-new-client)
+    (neoment-events-reset-caches)
+    (let ((room (neoment-get-room "!r:s"))
+          (neoment-client-room-changed-functions nil))
+      (neoment-room-set-tracked room t)
+      (neoment-test-with-http (lambda (args) (push args pending) 'pending)
+        (neoment-events-handle
+         room (neoment-events-test-text
+               "answer" :id "$reply" :ts 10
+               :extra '((m.relates_to . ((m.in_reply_to . ((event_id . "$orig"))))))))
+        (let ((replied (neoment-message-replying-to (neoment-room-get-message room "$reply")))
+              (req (seq-find (lambda (r) (string-search "/event/" (plist-get r :url))) pending)))
+          (funcall (plist-get req :callback)
+                   `(:ok ((type . "m.room.message") (event_id . "$orig") (sender . "@bob:s")
+                          (origin_server_ts . 5)
+                          (content . ((body . "question")))
+                          (unsigned . ((m.relations
+                                        . ((m.replace
+                                            . ((type . "m.room.message") (event_id . "$e")
+                                               (sender . "@mallory:s") (origin_server_ts . 6)
+                                               (content . ((body . "* hacked")
+                                                           (m.new_content . ((body . "hacked"))))))))))))))
+          (should (equal (neoment-message-sender replied) "@bob:s"))
+          (should (equal (neoment-message-content replied) "question")))))))
 
 (ert-deftest neoment-events-display-name-fetch ()
   (let ((neoment--client nil) (requests 0) (changed nil))

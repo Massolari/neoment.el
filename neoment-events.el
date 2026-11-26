@@ -85,6 +85,10 @@
 (setq neoment-client-fetch-display-name-function
       #'neoment-events-fetch-display-name)
 
+(defun neoment-events--same-sender-p (a b)
+  "Return non-nil when sender A is a string equal to sender B."
+  (and (stringp a) (equal a b)))
+
 ;;;; Replies
 
 (defvar neoment-events--reply-cache (make-hash-table :test 'equal)
@@ -93,7 +97,12 @@
 (defun neoment-events--event-message-fields (event)
   "Return the message plist of the fields shown for EVENT."
   (let ((replacement (neoment-events--get event 'unsigned 'm.relations 'm.replace)))
-    (neoment-events-event-to-message (or replacement event))))
+    (neoment-events-event-to-message
+     (if (and replacement
+              (neoment-events--same-sender-p (alist-get 'sender replacement)
+                                             (alist-get 'sender event)))
+         replacement
+       event))))
 
 (defun neoment-events--fill-message (target source)
   "Copy the displayed fields of message SOURCE into TARGET."
@@ -345,6 +354,11 @@ room changed."
          ((null target)
           (neoment-events--add-pending room target-id event)
           nil)
+         ;; Only the original sender may edit, and state is never edited.
+         ((or (neoment-message-is-state target)
+              (not (neoment-events--same-sender-p
+                    (alist-get 'sender event) (neoment-message-sender target))))
+          nil)
          ;; A redacted message keeps its redaction text, whatever order
          ;; the edit and the redaction arrive in.
          ((neoment-message-was-redacted target) nil)
@@ -399,16 +413,23 @@ room changed."
       nil)
      ((null (alist-get 'content target)) nil)
      ((equal (alist-get 'type target) "m.room.message")
-      (let ((relates (neoment-events--get target 'content 'm.relates_to)))
+      (let ((relates (neoment-events--get target 'content 'm.relates_to))
+            (changed t))
         (if (and (equal (alist-get 'rel_type relates) "m.replace")
                  (alist-get 'event_id relates))
-            ;; An edit ignored because its target was redacted must not
-            ;; remove the target's redaction placeholder.
-            (let ((edited (neoment-room-get-message
-                           room (alist-get 'event_id relates))))
-              (unless (and edited (neoment-message-was-redacted edited))
-                (remhash (alist-get 'event_id relates)
-                         (neoment-room-messages room))))
+            (let* ((edited-id (alist-get 'event_id relates))
+                   (edited (neoment-room-get-message room edited-id)))
+              ;; Only an edit that was actually applied removes the
+              ;; message: one from the message's own sender, never of a
+              ;; state message, and never of a redacted message (whose
+              ;; redaction placeholder must stay).
+              (if (and edited
+                       (not (neoment-message-is-state edited))
+                       (not (neoment-message-was-redacted edited))
+                       (neoment-events--same-sender-p
+                        (alist-get 'sender target) (neoment-message-sender edited)))
+                  (remhash edited-id (neoment-room-messages room))
+                (setq changed nil)))
           (let ((message (neoment-room-get-message room redacts))
                 (reason (neoment-events--get event 'content 'reason))
                 text)
@@ -426,7 +447,7 @@ room changed."
                     (neoment-message-id message) redacts))))
         ;; The target event is now empty, so it is not redacted twice.
         (setf (alist-get 'content target) nil)
-        t))
+        changed))
      ((equal (alist-get 'type target) "m.reaction")
       (let* ((relates (neoment-events--get target 'content 'm.relates_to))
              (key (alist-get 'key relates))

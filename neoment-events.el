@@ -448,14 +448,20 @@ Return the message, or nil when ROOM does not store it."
       (neoment-events--add-pending room redacts event)
       nil)
      ;; An untracked room keeps no raw events, only its last message:
-     ;; redact that message when it is the target.  The target cannot
-     ;; arrive later, so nothing is kept pending.
+     ;; redact that message when it is the target, or drop it when the
+     ;; target is its applied edit, as a tracked room does.  The target
+     ;; cannot arrive later, so nothing is kept pending.
      ((null target)
-      (let ((message (neoment-room-get-message room redacts)))
-        (and message
-             (not (neoment-message-was-redacted message))
-             (neoment-events--redact-message room redacts event)
-             t)))
+      (let ((message (neoment-room-find-message room redacts)))
+        (cond
+         ((or (null message) (neoment-message-was-redacted message)) nil)
+         ((equal (neoment-message-effective-id message) redacts)
+          (neoment-events--redact-message room redacts event)
+          t)
+         (t
+          (remhash (neoment-message-effective-id message)
+                   (neoment-room-messages room))
+          t))))
      ((null (alist-get 'content target)) nil)
      ((equal (alist-get 'type target) "m.room.message")
       (let ((relates (neoment-events--get target 'content 'm.relates_to))

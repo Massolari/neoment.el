@@ -293,7 +293,31 @@ Each event is (ID BODY TS) for a message from Alice, or (redact ID TS)."
       (neoment-notify-room-counts-changed room 0 0 2 0)
       (should (equal sent '(("[dev] Alice" "hi"))))
       (unless tracked
-        (should (zerop (hash-table-count (neoment-room-pending-events room))))))
+        (should (zerop (hash-table-count (neoment-room-pending-events room))))
+        ;; The room list preview shows the redaction, not the spam.
+        (let ((last (neoment-room-last-message room)))
+          (should (neoment-message-was-redacted last))
+          (should (equal (neoment-message-content last) "[Redacted]")))))
+    ;; A redacted applied edit never leaks its text.
+    (neoment-notif-decision-test
+      (neoment-notify-clear-candidates)
+      (neoment-room-set-tracked room tracked)
+      (setf (neoment-room-read-receipt room) '(:event-id "$x" :ts 1))
+      (neoment-events-handle-multiple
+       room
+       (list (neoment-test-event "m.room.message" :id "$1" :ts 10
+                                 :content '((msgtype . "m.text") (body . "hi")))
+             (neoment-test-event
+              "m.room.message" :id "$e" :ts 20
+              :content '((msgtype . "m.text") (body . "* secret")
+                         (m.new_content . ((msgtype . "m.text") (body . "secret")))
+                         (m.relates_to . ((rel_type . "m.replace") (event_id . "$1")))))
+             (neoment-test-event "m.room.redaction" :id "$xe" :ts 30
+                                 :content '((redacts . "$e")))))
+      (neoment-notify-room-counts-changed room 0 0 1 0)
+      (should (equal sent '(("dev" "New notification"))))
+      (should-not (seq-find (lambda (m) (equal (neoment-message-content m) "secret"))
+                            (hash-table-values (neoment-room-messages room)))))
     ;; Only the redacted message: generic text, never the spam.
     (neoment-notif-decision-test
       (neoment-notify-clear-candidates)

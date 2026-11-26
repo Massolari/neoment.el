@@ -254,12 +254,16 @@ Each alist maps a name (string) to non-nil when folded."
       (topic . ,(or (neoment-room-topic room) ""))
       (events)
       (pending_events)
-      (messages . ,(and last (list (cons (neoment-message-id last)
+      (messages . ,(and last (list (cons (neoment-message-effective-id last)
                                          (neoment-storage--message-to-json last)))))
       (last_activity . ,(if (neoment-room-last-activity room)
                             (neoment-storage--plist-to-alist
                              (neoment-room-last-activity room))
                           :null))
+      (unread_activity . ,(if (neoment-room-unread-activity room)
+                              (neoment-storage--plist-to-alist
+                               (neoment-room-unread-activity room))
+                            :null))
       (is_direct . ,(neoment-storage--bool (neoment-room-is-direct room)))
       (is_favorite . ,(neoment-storage--bool (neoment-room-is-favorite room)))
       (is_lowpriority . ,(neoment-storage--bool (neoment-room-is-lowpriority room)))
@@ -300,6 +304,13 @@ Each alist maps a name (string) to non-nil when folded."
                :last-activity (and (alist-get 'last_activity data)
                                    (neoment-storage--alist-to-plist
                                     (alist-get 'last_activity data)))
+               ;; A cache from an older version has no unread_activity key.
+               ;; A null value means the room has no unread activity.
+               :unread-activity (let ((activity (if (assq 'unread_activity data)
+                                                    (alist-get 'unread_activity data)
+                                                  (alist-get 'last_activity data))))
+                                  (and activity
+                                       (neoment-storage--alist-to-plist activity)))
                :is-direct (neoment-storage--parse-bool (alist-get 'is_direct data))
                :is-favorite (neoment-storage--parse-bool (alist-get 'is_favorite data))
                :is-lowpriority (neoment-storage--parse-bool
@@ -324,9 +335,11 @@ Each alist maps a name (string) to non-nil when folded."
                          (neoment-storage--parse-bool (plist-get receipt :is-local))))))
     (dolist (pair (alist-get 'members data))
       (puthash (symbol-name (car pair)) t (neoment-room-members room)))
+    ;; Key by the loaded message's effective id, not the stored key, so
+    ;; caches written with an edit's id as key load correctly.
     (dolist (pair (alist-get 'messages data))
       (let ((msg (neoment-storage--message-from-json (cdr pair))))
-        (puthash (symbol-name (car pair)) msg (neoment-room-messages room))))
+        (puthash (neoment-message-effective-id msg) msg (neoment-room-messages room))))
     room))
 
 (defun neoment-storage--invited-room-to-json (room)

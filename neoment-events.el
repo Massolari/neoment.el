@@ -238,6 +238,7 @@ Replies are not resolved here."
      :content body
      :formatted-content formatted
      :timestamp (alist-get 'origin_server_ts event)
+     :was-redacted (and (neoment-events--get event 'unsigned 'redacted_because) t)
      :age (neoment-events--get event 'unsigned 'age)
      :mentions (copy-sequence (neoment-events--get content 'm.mentions 'user_ids))
      :attachment (and type (alist-get 'url content)
@@ -331,6 +332,10 @@ Replies are not resolved here."
 
 ;;;; Handlers
 
+(defvar neoment-events--timeline-limited nil
+  "Non-nil while applying a sync timeline that has a gap before it.
+Other users' thread replies then count as unread activity.")
+
 (defun neoment-events--handle-message (room event is-history)
   "Handle the message EVENT of ROOM.
 IS-HISTORY is non-nil for paginated history.  Return non-nil when the
@@ -354,6 +359,9 @@ room changed."
               (not (neoment-events--same-sender-p
                     (alist-get 'sender event) (neoment-message-sender target))))
           nil)
+         ;; A redacted message keeps its redaction text, whatever order
+         ;; the edit and the redaction arrive in.
+         ((neoment-message-was-redacted target) nil)
          ((and (neoment-message-edit-data target)
                (>= (plist-get (neoment-message-edit-data target) :timestamp)
                    event-ts))
@@ -383,8 +391,15 @@ room changed."
         (when-let* ((replace (neoment-events--get event 'unsigned 'm.relations
                                                   'm.replace)))
           (neoment-events-handle room replace is-history))
-        (neoment-room-set-last-activity room event-ts (alist-get 'event_id event)
-                                        (neoment-events--get event 'unsigned 'age))
+        (let ((id (alist-get 'event_id event))
+              (age (neoment-events--get event 'unsigned 'age)))
+          (neoment-room-set-last-activity room event-ts id age)
+          (unless (or (equal (neoment-message-sender message) (neoment-user-id))
+                      ;; In a limited timeline, main-timeline messages
+                      ;; before this reply may be missing, so count it.
+                      (and (neoment-message-thread-root-id message)
+                           (not neoment-events--timeline-limited)))
+            (neoment-room-set-unread-activity room event-ts id age)))
         t)))))
 
 (defun neoment-events--handle-redaction (room event)
@@ -404,11 +419,13 @@ room changed."
                  (alist-get 'event_id relates))
             (let* ((edited-id (alist-get 'event_id relates))
                    (edited (neoment-room-get-message room edited-id)))
-              ;; Only an edit from the message's own sender removes it, and
-              ;; never when the target is a state message (edits of state
-              ;; are ignored, so redacting one changes nothing).
+              ;; Only an edit that was actually applied removes the
+              ;; message: one from the message's own sender, never of a
+              ;; state message, and never of a redacted message (whose
+              ;; redaction placeholder must stay).
               (if (and edited
                        (not (neoment-message-is-state edited))
+                       (not (neoment-message-was-redacted edited))
                        (neoment-events--same-sender-p
                         (alist-get 'sender target) (neoment-message-sender edited)))
                   (remhash edited-id (neoment-room-messages room))
@@ -423,7 +440,11 @@ room changed."
               (setf (neoment-message-content message) text
                     (neoment-message-formatted-content message) text
                     (neoment-message-was-redacted message) t
-                    (neoment-message-attachment message) nil))))
+                    (neoment-message-attachment message) nil
+                    ;; Drop any applied edit, so the message is not
+                    ;; shown as edited and keeps its original id.
+                    (neoment-message-edit-data message) nil
+                    (neoment-message-id message) redacts))))
         ;; The target event is now empty, so it is not redacted twice.
         (setf (alist-get 'content target) nil)
         changed))
@@ -444,10 +465,23 @@ room changed."
                     (seq-remove (lambda (pair) (equal (car pair) key)) reactions))))
           t))))))
 
+(defun neoment-events--receipt (room stored ts event-id)
+  "Return the read receipt of ROOM on EVENT-ID sent at TS.
+Record the event's own timestamp when it is loaded, or when STORED, the
+current receipt, is on the same event and knows it.  It keeps a receipt
+moved back to an older event from counting as read once that event is
+no longer loaded."
+  (let ((event-ts (or (neoment-room-event-timestamp room event-id)
+                      (and (equal event-id (plist-get stored :event-id))
+                           (plist-get stored :event-ts)))))
+    (append (list :ts ts :event-id event-id)
+            (and event-ts (list :event-ts event-ts)))))
+
 (defun neoment-events--handle-receipt (room event)
   "Handle the `m.receipt' EVENT of ROOM."
   (let* ((user (neoment-user-id))
-         (last (or (neoment-room-read-receipt room) (list :ts 0 :event-id nil)))
+         (stored (neoment-room-read-receipt room))
+         (last (or stored (list :ts 0 :event-id nil)))
          (newest (if (plist-get last :is-local) -1 (or (plist-get last :ts) 0)))
          (changed nil))
     (dolist (by-event (alist-get 'content event))
@@ -462,11 +496,12 @@ room changed."
                 (cond
                  ((and (numberp ts) (> ts newest))
                   (setq newest ts
-                        last (list :ts ts :event-id event-id)
+                        last (neoment-events--receipt room stored ts event-id)
                         changed t))
                  ((and (not (numberp ts))
                        (not (equal event-id (plist-get last :event-id))))
-                  (setq last (list :ts (plist-get last :ts) :event-id event-id)
+                  (setq last (neoment-events--receipt
+                              room stored (plist-get last :ts) event-id)
                         changed t)))))))))
     (when changed
       (neoment-room-set-read-receipt room last))

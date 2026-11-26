@@ -305,6 +305,27 @@ Each spec is (KIND RULE-ID ENABLED ACTIONS [CONDITIONS])."
     (setf (neoment-room-read-receipt room) '(:event-id "$x" :ts 10))
     (neoment-notify-room-counts-changed room 0 0 1 0)
     (should (equal sent '(("[dev] Alice" "hi")))))
+  ;; Same, in an untracked room that only stores its last message.
+  (neoment-notif-decision-test
+    (neoment-notify-clear-candidates)
+    (neoment-room-set-tracked room nil)
+    (let ((hi (neoment-notif-test-message "$1" "@alice:s" "hi" 50))
+          (spam (neoment-notif-test-message "$2" "@alice:s" "spam" 60)))
+      (dolist (m (list hi spam))
+        (neoment-room-add-message room m)
+        (neoment-notify-add-candidate room m))
+      (should-not (neoment-room-get-message room "$1"))
+      (setf (neoment-message-was-redacted spam) t))
+    (setf (neoment-room-read-receipt room) '(:event-id "$x" :ts 10))
+    (neoment-notify-room-counts-changed room 0 0 1 0)
+    (should (equal sent '(("[dev] Alice" "hi")))))
+  ;; Candidates added out of order still pick the newest.
+  (neoment-notif-decision-test
+    (neoment-notify-clear-candidates)
+    (neoment-notify-add-candidate room (neoment-notif-test-message "$2" "@alice:s" "new" 20))
+    (neoment-notify-add-candidate room (neoment-notif-test-message "$1" "@alice:s" "old" 10))
+    (neoment-notify-room-counts-changed room 0 0 1 0)
+    (should (equal sent '(("[dev] Alice" "new")))))
   ;; Unchanged or decreasing counts.
   (neoment-notif-decision-test
     (neoment-notify-add-candidate room (neoment-notif-test-message "$1" "@alice:s" "hi" 1))

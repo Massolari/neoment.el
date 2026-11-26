@@ -71,7 +71,9 @@ LEVEL is `info' (the default), `warn' or `error'."
   "Function returning the room id shown in the selected window, or nil.")
 
 (defvar neoment-notify--candidates (make-hash-table :test 'equal)
-  "Newest incoming message of each room during the current sync.")
+  "Incoming messages of each room during the current sync, newest first.
+Older ones are kept so a newest one redacted in the same sync can be
+skipped, even in untracked rooms that only store their last message.")
 
 (defvar neoment-notify--last-notified (make-hash-table :test 'equal)
   "Timestamp (ms) of the last notification sent for each room.")
@@ -108,17 +110,20 @@ LEVEL is `info' (the default), `warn' or `error'."
                   (neoment-room-id room)))))
 
 (defun neoment-notify-add-candidate (room message)
-  "Remember MESSAGE as the newest incoming message of ROOM."
+  "Remember MESSAGE as an incoming message of ROOM."
   (neoment-notify--ensure-client)
   (unless (or (neoment-message-is-state message)
               (neoment-message-was-redacted message)
               (equal (neoment-message-sender message)
                      (neoment-client-user-id neoment--client)))
-    (let ((old (gethash (neoment-room-id room) neoment-notify--candidates)))
-      (when (or (null old)
-                (>= (or (neoment-message-timestamp message) 0)
-                    (or (neoment-message-timestamp old) 0)))
-        (puthash (neoment-room-id room) message neoment-notify--candidates)))))
+    (let* ((ts (or (neoment-message-timestamp message) 0))
+           (older (gethash (neoment-room-id room) neoment-notify--candidates))
+           (newer nil))
+      (while (and older (> (or (neoment-message-timestamp (car older)) 0) ts))
+        (push (pop older) newer))
+      (puthash (neoment-room-id room)
+               (nconc (nreverse newer) (cons message older))
+               neoment-notify--candidates))))
 
 (defun neoment-notify--title (room-name sender-name)
   "Return the notification title for SENDER-NAME in ROOM-NAME."
@@ -154,11 +159,9 @@ NEW-NOTIFICATIONS and NEW-HIGHLIGHTS the counts after it."
   (when (or (> (or new-notifications 0) (or old-notifications 0))
             (> (or new-highlights 0) (or old-highlights 0)))
     (let* ((room-id (neoment-room-id room))
-           (candidate (gethash room-id neoment-notify--candidates))
-           ;; The candidate may have been redacted live after it was added.
-           (msg (or (and candidate
-                         (not (neoment-message-was-redacted candidate))
-                         candidate)
+           ;; A candidate may have been redacted live after it was added.
+           (msg (or (seq-find (lambda (m) (not (neoment-message-was-redacted m)))
+                              (gethash room-id neoment-notify--candidates))
                     (neoment-notify--fallback-message room)))
            (room-name (neoment-room-display-name room-id)))
       (unless (neoment-notify--suppressed-p room msg)

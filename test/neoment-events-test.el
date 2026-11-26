@@ -532,6 +532,73 @@
                                                     :content '((redacts . "$ed"))))
     (should-not (neoment-room-get-message room "$m2"))))
 
+(ert-deftest neoment-events-edit-after-redaction ()
+  (neoment-events-test
+    (neoment-events-handle-multiple room (list (neoment-events-test-text "secret" :id "$s" :ts 1)))
+    (neoment-events-handle room (neoment-test-event "m.room.redaction" :id "$x" :ts 2
+                                                    :content '((redacts . "$s"))))
+    ;; An edit handled after the redaction does not bring the text back.
+    (should-not (neoment-events-handle room (neoment-events-test-edit "$e" "$s" "secret2" 3)))
+    (let ((m (neoment-room-get-message room "$s")))
+      (should (equal (neoment-message-content m) "[Redacted]"))
+      (should (neoment-message-was-redacted m))
+      (should (equal (neoment-message-id m) "$s"))
+      (should-not (neoment-message-edit-data m)))))
+
+(ert-deftest neoment-events-edit-of-event-redacted-on-arrival ()
+  (neoment-events-test
+    ;; The event arrives already redacted (`unsigned.redacted_because').
+    (neoment-events-handle
+     room (neoment-events-test-text "secret" :id "$s"
+                                    :unsigned '((redacted_because . ((sender . "@alice:s"))))))
+    (should (neoment-message-was-redacted (neoment-room-get-message room "$s")))
+    (should-not (neoment-events-handle room (neoment-events-test-edit "$e" "$s" "secret2" 3)))
+    (let ((m (neoment-room-get-message room "$s")))
+      (should (equal (neoment-message-content m) "[Redacted]"))
+      (should (equal (neoment-message-id m) "$s"))
+      (should-not (neoment-message-edit-data m)))))
+
+(ert-deftest neoment-events-redaction-after-edit ()
+  (neoment-events-test
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-text "secret" :id "$s" :ts 1)
+                (neoment-events-test-edit "$e" "$s" "secret2" 2)))
+    (neoment-events-handle room (neoment-test-event "m.room.redaction" :id "$x" :ts 3
+                                                    :content '((redacts . "$s"))))
+    ;; The redacted message is not shown as edited and keeps its id.
+    (let ((m (neoment-room-get-message room "$s")))
+      (should (equal (neoment-message-content m) "[Redacted]"))
+      (should (equal (neoment-message-id m) "$s"))
+      (should-not (neoment-message-edit-data m)))))
+
+(ert-deftest neoment-events-redacting-ignored-edit-keeps-placeholder ()
+  (neoment-events-test
+    (neoment-events-handle-multiple room (list (neoment-events-test-text "secret" :id "$s" :ts 1)))
+    (neoment-events-handle room (neoment-test-event "m.room.redaction" :id "$x" :ts 2
+                                                    :content '((redacts . "$s"))))
+    (neoment-events-handle room (neoment-events-test-edit "$e" "$s" "secret2" 3))
+    ;; Redacting the ignored edit leaves the placeholder in place.
+    (neoment-events-handle room (neoment-test-event "m.room.redaction" :id "$x2" :ts 4
+                                                    :content '((redacts . "$e"))))
+    (let ((m (neoment-room-get-message room "$s")))
+      (should m)
+      (should (equal (neoment-message-content m) "[Redacted]")))))
+
+(ert-deftest neoment-events-pending-redaction-then-history-edit ()
+  (neoment-events-test
+    ;; The redaction arrives through sync before its target is known.
+    (neoment-events-handle room (neoment-test-event "m.room.redaction" :id "$x" :ts 30
+                                                    :content '((redacts . "$s"))))
+    (should (gethash "$s" (neoment-room-pending-events room)))
+    ;; A history page then delivers the original and its later edit.
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-text "secret" :id "$s" :ts 10)
+                (neoment-events-test-edit "$e" "$s" "secret2" 20))
+     t)
+    (let ((m (neoment-room-get-message room "$s")))
+      (should (equal (neoment-message-content m) "[Redacted]"))
+      (should (neoment-message-was-redacted m)))))
+
 (ert-deftest neoment-events-reactions-two-users ()
   (neoment-events-test
     (neoment-events-handle-multiple

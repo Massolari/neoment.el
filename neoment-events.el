@@ -229,6 +229,7 @@ Replies are not resolved here."
      :content body
      :formatted-content formatted
      :timestamp (alist-get 'origin_server_ts event)
+     :was-redacted (and (neoment-events--get event 'unsigned 'redacted_because) t)
      :age (neoment-events--get event 'unsigned 'age)
      :mentions (copy-sequence (neoment-events--get content 'm.mentions 'user_ids))
      :attachment (and type (alist-get 'url content)
@@ -344,6 +345,9 @@ room changed."
          ((null target)
           (neoment-events--add-pending room target-id event)
           nil)
+         ;; A redacted message keeps its redaction text, whatever order
+         ;; the edit and the redaction arrive in.
+         ((neoment-message-was-redacted target) nil)
          ((and (neoment-message-edit-data target)
                (>= (plist-get (neoment-message-edit-data target) :timestamp)
                    event-ts))
@@ -398,7 +402,13 @@ room changed."
       (let ((relates (neoment-events--get target 'content 'm.relates_to)))
         (if (and (equal (alist-get 'rel_type relates) "m.replace")
                  (alist-get 'event_id relates))
-            (remhash (alist-get 'event_id relates) (neoment-room-messages room))
+            ;; An edit ignored because its target was redacted must not
+            ;; remove the target's redaction placeholder.
+            (let ((edited (neoment-room-get-message
+                           room (alist-get 'event_id relates))))
+              (unless (and edited (neoment-message-was-redacted edited))
+                (remhash (alist-get 'event_id relates)
+                         (neoment-room-messages room))))
           (let ((message (neoment-room-get-message room redacts))
                 (reason (neoment-events--get event 'content 'reason))
                 text)
@@ -409,7 +419,11 @@ room changed."
               (setf (neoment-message-content message) text
                     (neoment-message-formatted-content message) text
                     (neoment-message-was-redacted message) t
-                    (neoment-message-attachment message) nil))))
+                    (neoment-message-attachment message) nil
+                    ;; Drop any applied edit, so the message is not
+                    ;; shown as edited and keeps its original id.
+                    (neoment-message-edit-data message) nil
+                    (neoment-message-id message) redacts))))
         ;; The target event is now empty, so it is not redacted twice.
         (setf (alist-get 'content target) nil)
         t))

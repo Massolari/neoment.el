@@ -59,7 +59,7 @@ The client SHALL apply:
 - **THEN** its content is `[Redacted by <moderator name>]`
 
 ### Requirement: Edits
-An `m.replace` relation SHALL change the target's content to `m.new_content`, set `edit_data = {id: target, timestamp}` and change the message's id to the edit event id, keeping the original key. This happens only if the edit is newer than the last one applied. Edits to unknown targets SHALL be pending. Edits embedded in `unsigned["m.relations"]["m.replace"]` SHALL be processed too. A room SHALL always store a message under its effective id (the original event id), never under the id of an edit.
+An `m.replace` relation SHALL change the target's content to `m.new_content`, set `edit_data = {id: target, timestamp}` and change the message's id to the edit event id, keeping the original key. This happens only if the edit is newer than the last one applied. Edits to unknown targets SHALL be pending. Edits embedded in `unsigned["m.relations"]["m.replace"]` SHALL be processed too. A room SHALL always store a message under its effective id (the original event id), never under the id of an edit. An edit whose target has `was_redacted` set MUST be ignored, whatever order the events arrive in.
 
 #### Scenario: Older edit ignored
 - **WHEN** an edit with ts 100 arrives after an edit with ts 200 was applied
@@ -68,6 +68,18 @@ An `m.replace` relation SHALL change the target's content to `m.new_content`, se
 #### Scenario: Edited message found by its original id
 - **WHEN** message `$o` is edited by `$oe`
 - **THEN** the message is stored under the key `$o`, not `$oe`, and a reaction to `$o` is applied to it
+
+#### Scenario: Edit after redaction ignored
+- **WHEN** message `$s` is redacted and then an edit of `$s` with a later timestamp arrives
+- **THEN** the content of `$s` stays `[Redacted]`, `was_redacted` stays set, its id stays `$s`, and the room is not marked as changed
+
+#### Scenario: Pending redaction then history with an edit
+- **WHEN** a redaction of unknown `$s` is pending, and a history page then delivers `$s` and a later edit of `$s`
+- **THEN** after the page is handled the content of `$s` is `[Redacted]` and `was_redacted` is set
+
+#### Scenario: Edit of an event redacted on arrival
+- **WHEN** event `$s` arrives with `unsigned.redacted_because` and then an edit of `$s` arrives
+- **THEN** `$s` has `was_redacted` set, it keeps its redaction text and its id stays `$s`
 
 ### Requirement: Edit validation
 An `m.replace` edit MUST be ignored when its `sender` differs from the target message's sender, or when the target is a state message. An ignored edit leaves the target's content, id and `edit_data` unchanged. Pending edits and edits embedded in `unsigned["m.relations"]["m.replace"]` SHALL be checked the same way once the target is known, and a rejected pending edit SHALL stop waiting for its target.
@@ -140,7 +152,7 @@ Other memberships produce no message.
 - **THEN** the text is `Membership: B changed display name from A to B`
 
 ### Requirement: Redactions
-`m.room.redaction` of an unknown target SHALL be pending. A target that is already redacted is ignored. Redacting an edit event SHALL remove the edited message entry, but only when the edit's sender matches the edited message's sender and the edited message is not a state message. Redacting an edit from another sender, or an edit of a state message, MUST leave the message unchanged. Redacting a normal message SHALL set content `[Redacted]` (or `[Redacted: <reason>]`) and `was_redacted`. Redacting a reaction SHALL remove it, and delete the key when its list becomes empty.
+`m.room.redaction` of an unknown target SHALL be pending. A target that is already redacted is ignored. Redacting an edit event SHALL remove the edited message entry only when that edit was applied: the edit's sender matches the message's sender, and the message is neither a state message nor redacted. Otherwise the message MUST be left unchanged. Redacting a normal message SHALL set content `[Redacted]` (or `[Redacted: <reason>]`) and `was_redacted`, and clear any applied edit (`edit_data` and the edit's id). Redacting a reaction SHALL remove it, and delete the key when its list becomes empty.
 
 #### Scenario: Redact last reaction
 - **WHEN** the only 👍 reaction on a message is redacted
@@ -153,6 +165,14 @@ Other memberships produce no message.
 #### Scenario: Redact an edit of a state message
 - **WHEN** `@alice:s` sends an `m.replace` of her own membership event and then redacts that edit
 - **THEN** the membership event is still in the room with its original content
+
+#### Scenario: Redaction after an edit
+- **WHEN** message `$s` is edited by `$e` and then `$s` is redacted
+- **THEN** `$s` shows `[Redacted]`, its id is `$s` and it has no `edit_data`
+
+#### Scenario: Redacting an ignored edit
+- **WHEN** `$s` is redacted, an edit `$e` of `$s` is ignored, and then `$e` is redacted
+- **THEN** `$s` is still in the room with its redaction text
 
 ### Requirement: Reactions
 `m.reaction` with `m.annotation` SHALL add `{event_id, sender}` under `reactions[key]` of the target message, or become pending if the target is unknown.

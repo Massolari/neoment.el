@@ -391,7 +391,13 @@ room changed."
       (let ((relates (neoment-events--get target 'content 'm.relates_to)))
         (if (and (equal (alist-get 'rel_type relates) "m.replace")
                  (alist-get 'event_id relates))
-            (remhash (alist-get 'event_id relates) (neoment-room-messages room))
+            ;; An edit ignored because its target was redacted must not
+            ;; remove the target's redaction placeholder.
+            (let ((edited (neoment-room-get-message
+                           room (alist-get 'event_id relates))))
+              (unless (and edited (neoment-message-was-redacted edited))
+                (remhash (alist-get 'event_id relates)
+                         (neoment-room-messages room))))
           (let ((message (neoment-room-get-message room redacts))
                 (reason (neoment-events--get event 'content 'reason))
                 text)
@@ -402,7 +408,11 @@ room changed."
               (setf (neoment-message-content message) text
                     (neoment-message-formatted-content message) text
                     (neoment-message-was-redacted message) t
-                    (neoment-message-attachment message) nil))))
+                    (neoment-message-attachment message) nil
+                    ;; Drop any applied edit, so the message is not
+                    ;; shown as edited and keeps its original id.
+                    (neoment-message-edit-data message) nil
+                    (neoment-message-id message) redacts))))
         ;; The target event is now empty, so it is not redacted twice.
         (setf (alist-get 'content target) nil)
         t))

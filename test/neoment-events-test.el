@@ -380,6 +380,32 @@
       (should (equal (neoment-message-id m) "$s"))
       (should-not (neoment-message-edit-data m)))))
 
+(ert-deftest neoment-events-redaction-after-edit ()
+  (neoment-events-test
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-text "secret" :id "$s" :ts 1)
+                (neoment-events-test-edit "$e" "$s" "secret2" 2)))
+    (neoment-events-handle room (neoment-test-event "m.room.redaction" :id "$x" :ts 3
+                                                    :content '((redacts . "$s"))))
+    ;; The redacted message is not shown as edited and keeps its id.
+    (let ((m (neoment-room-get-message room "$s")))
+      (should (equal (neoment-message-content m) "[Redacted]"))
+      (should (equal (neoment-message-id m) "$s"))
+      (should-not (neoment-message-edit-data m)))))
+
+(ert-deftest neoment-events-redacting-ignored-edit-keeps-placeholder ()
+  (neoment-events-test
+    (neoment-events-handle-multiple room (list (neoment-events-test-text "secret" :id "$s" :ts 1)))
+    (neoment-events-handle room (neoment-test-event "m.room.redaction" :id "$x" :ts 2
+                                                    :content '((redacts . "$s"))))
+    (neoment-events-handle room (neoment-events-test-edit "$e" "$s" "secret2" 3))
+    ;; Redacting the ignored edit leaves the placeholder in place.
+    (neoment-events-handle room (neoment-test-event "m.room.redaction" :id "$x2" :ts 4
+                                                    :content '((redacts . "$e"))))
+    (let ((m (neoment-room-get-message room "$s")))
+      (should m)
+      (should (equal (neoment-message-content m) "[Redacted]")))))
+
 (ert-deftest neoment-events-pending-redaction-then-history-edit ()
   (neoment-events-test
     ;; The redaction arrives through sync before its target is known.

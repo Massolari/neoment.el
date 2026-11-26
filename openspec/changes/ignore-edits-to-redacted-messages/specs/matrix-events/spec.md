@@ -19,4 +19,19 @@ An `m.replace` relation SHALL change the target's content to `m.new_content`, se
 
 #### Scenario: Edit of an event redacted on arrival
 - **WHEN** event `$s` arrives with `unsigned.redacted_because` and then an edit of `$s` arrives
-- **THEN** `$s` has `was_redacted` set, its content stays `[Redacted]` and its id stays `$s`
+- **THEN** `$s` has `was_redacted` set, it keeps its redaction text and its id stays `$s`
+
+### Requirement: Redactions
+`m.room.redaction` of an unknown target SHALL be pending. A target that is already redacted is ignored. Redacting an edit event SHALL remove the edited message entry, unless that message is redacted. Redacting a normal message SHALL set content `[Redacted]` (or `[Redacted: <reason>]`) and `was_redacted`, and clear any applied edit (`edit_data` and the edit's id). Redacting a reaction SHALL remove it, and delete the key when its list becomes empty.
+
+#### Scenario: Redact last reaction
+- **WHEN** the only 👍 reaction on a message is redacted
+- **THEN** the message has no `👍` key
+
+#### Scenario: Redaction after an edit
+- **WHEN** message `$s` is edited by `$e` and then `$s` is redacted
+- **THEN** `$s` shows `[Redacted]`, its id is `$s` and it has no `edit_data`
+
+#### Scenario: Redacting an ignored edit
+- **WHEN** `$s` is redacted, an edit `$e` of `$s` is ignored, and then `$e` is redacted
+- **THEN** `$s` is still in the room with its redaction text

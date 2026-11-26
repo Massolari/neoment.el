@@ -12,7 +12,11 @@
 ## ADDED Requirements
 
 ### Requirement: Server-redacted messages
-A message event that arrives already redacted (`unsigned.redacted_because`, typically with empty `content`) through sync, history or a single-event fetch SHALL become a message, with the redacted content described in Message content. It SHALL be marked `was_redacted` and carry no attachment, exactly like a message redacted live.
+A message event that arrives already redacted (`unsigned.redacted_because`, typically with empty `content`) through sync, history or a single-event fetch SHALL become a message, with the redacted content described in Message content. It SHALL be marked `was_redacted` and carry no attachment, exactly like a message redacted live. It SHALL NOT update the room's last or unread activity. When `redacted_because` has no sender, the content is `[Redacted]`.
+
+#### Scenario: Not activity
+- **WHEN** a server-redacted message from another user arrives after message `$a`
+- **THEN** the room's last and unread activity stay at `$a`
 
 #### Scenario: Already redacted on the server
 - **WHEN** an `m.room.message` arrives through sync or history with empty `content` and `unsigned.redacted_because.sender` = `@mod:s`, sent by `@a:s`
@@ -27,7 +31,7 @@ A message event that arrives already redacted (`unsigned.redacted_because`, typi
 - **THEN** no message is added
 
 ### Requirement: Replies to redacted messages
-When the asynchronously fetched replied event carries `unsigned.redacted_because`, it SHALL fill the reply as a redacted message (see Message content) and SHALL NOT be treated as unavailable, even though its `content` is empty.
+When the asynchronously fetched replied event carries `unsigned.redacted_because`, it SHALL fill the reply as a redacted message (see Message content) and SHALL NOT be treated as unavailable, even though its `content` is empty. A bundled `m.replace` on a redacted fetched event SHALL be ignored.
 
 #### Scenario: Reply to a redacted message
 - **WHEN** the fetched replied event has empty `content` and `unsigned.redacted_because`

@@ -32,6 +32,8 @@ See proposal.md (Why). The relevant code is all in `neoment-events.el`:
    - *Alternative:* render a fixed "replied message was deleted" string. Rejected because it would add a new UI string and diverge from the redacted text used in the timeline.
 
 4. **Notification candidates are left as they are** (see Non-Goals). The `t` branch still calls `neoment-notify-add-candidate` for non-history events.
+5. **A server-redacted message is not activity.** The `t` branch skips `last_activity` and `unread_activity` for it, so a moderator clean-up neither marks the room unread nor moves it up the room list. This matches the room buffer, whose unread marker already skips redacted messages.
+6. **The reply fetch ignores a bundled edit on a redacted event**, so the quote never shows pre-redaction text that the timeline hides.
 
 ## Risks / Trade-offs
 

@@ -99,6 +99,7 @@
   (let ((replacement (neoment-events--get event 'unsigned 'm.relations 'm.replace)))
     (neoment-events-event-to-message
      (if (and replacement
+              (not (neoment-events--redacted-p event))
               (neoment-events--same-sender-p (alist-get 'sender replacement)
                                              (alist-get 'sender event)))
          replacement
@@ -235,7 +236,8 @@ Replies are not resolved here."
       (setq body (or (alist-get 'body new-content) body)
             formatted (or (alist-get 'formatted_body new-content) formatted)))
     (when redacted
-      (setq body (if (equal redacted-by (alist-get 'sender event))
+      (setq body (if (or (null redacted-by)
+                         (equal redacted-by (alist-get 'sender event)))
                      "[Redacted]"
                    (format "[Redacted by %s]" (neoment-display-name redacted-by)))
             formatted body))
@@ -401,15 +403,17 @@ room changed."
         (when-let* ((replace (neoment-events--get event 'unsigned 'm.relations
                                                   'm.replace)))
           (neoment-events-handle room replace is-history))
-        (let ((id (alist-get 'event_id event))
-              (age (neoment-events--get event 'unsigned 'age)))
-          (neoment-room-set-last-activity room event-ts id age)
-          (unless (or (equal (neoment-message-sender message) (neoment-user-id))
-                      ;; In a limited timeline, main-timeline messages
-                      ;; before this reply may be missing, so count it.
-                      (and (neoment-message-thread-root-id message)
-                           (not neoment-events--timeline-limited)))
-            (neoment-room-set-unread-activity room event-ts id age)))
+        ;; A message redacted before it arrived is not new activity.
+        (unless (neoment-message-was-redacted message)
+          (let ((id (alist-get 'event_id event))
+                (age (neoment-events--get event 'unsigned 'age)))
+            (neoment-room-set-last-activity room event-ts id age)
+            (unless (or (equal (neoment-message-sender message) (neoment-user-id))
+                        ;; In a limited timeline, main-timeline messages
+                        ;; before this reply may be missing, so count it.
+                        (and (neoment-message-thread-root-id message)
+                             (not neoment-events--timeline-limited)))
+              (neoment-room-set-unread-activity room event-ts id age))))
         t)))))
 
 (defun neoment-events--handle-redaction (room event)

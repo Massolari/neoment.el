@@ -440,6 +440,25 @@
                  room (neoment-test-event "m.room.message" :id "$c" :sender "@a:s")))
     (should-not (neoment-room-get-message room "$c"))))
 
+;; A message redacted before it arrived is neither unread nor activity.
+(ert-deftest neoment-events-server-redacted-not-activity ()
+  (neoment-events-test
+    (neoment-events-handle room (neoment-events-test-text "a" :id "$a" :ts 10))
+    (neoment-events-handle
+     room (neoment-test-event "m.room.message" :id "$r" :ts 20 :sender "@a:s"
+                              :unsigned '((redacted_because . ((sender . "@mod:s"))))))
+    (should (neoment-room-get-message room "$r"))
+    (should (equal (neoment-events-test-activity-ids room) '("$a" "$a")))))
+
+;; A redaction without a known redactor reads as plain [Redacted].
+(ert-deftest neoment-events-server-redacted-unknown-redactor ()
+  (neoment-events-test
+    (neoment-events-handle
+     room (neoment-test-event "m.room.message" :id "$r" :sender "@a:s"
+                              :unsigned '((redacted_because . ((type . "m.room.redaction"))))))
+    (should (equal (neoment-message-content (neoment-room-get-message room "$r"))
+                   "[Redacted]"))))
+
 (ert-deftest neoment-events-server-redacted-history ()
   (neoment-events-test
     (should (neoment-events-handle
@@ -913,6 +932,26 @@
       (should-not (neoment-message-placeholder replied))
       (should (equal (neoment-message-sender replied) "@bob:s"))
       (should (equal (neoment-message-content replied) "[Redacted by Mod]"))
+      (should (neoment-message-was-redacted replied)))))
+
+;; A bundled edit does not override the redaction of a fetched reply.
+(ert-deftest neoment-events-async-reply-redacted-with-bundled-edit ()
+  (neoment-events-test
+    (let* ((reply (neoment-events-test-reply-fetch
+                   '(:ok ((type . "m.room.message") (event_id . "$orig") (sender . "@bob:s")
+                          (origin_server_ts . 5) (content)
+                          (unsigned
+                           . ((redacted_because . ((sender . "@bob:s")))
+                              (m.relations
+                               . ((m.replace
+                                   . ((type . "m.room.message") (event_id . "$e")
+                                      (sender . "@bob:s") (origin_server_ts . 6)
+                                      (content
+                                       . ((msgtype . "m.text") (body . "* secret")
+                                          (m.new_content
+                                           . ((msgtype . "m.text") (body . "secret")))))))))))))))
+           (replied (neoment-message-replying-to reply)))
+      (should (equal (neoment-message-content replied) "[Redacted]"))
       (should (neoment-message-was-redacted replied)))))
 
 (ert-deftest neoment-events-async-reply-unavailable ()

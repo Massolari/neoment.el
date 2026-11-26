@@ -488,12 +488,12 @@ ids.  CALLBACK, if non-nil, receives the result."
       (when fully-read
         (setf (neoment-room-fully-read room) fully-read))
       (when read
-        (let ((message (neoment-room-find-message room read)))
+        (let ((event-ts (neoment-room-event-timestamp room read)))
           (setf (neoment-room-read-receipt room)
-                (list :event-id read
-                      :ts (or (and message (neoment-message-timestamp message))
-                              (neoment--now-ms))
-                      :is-local t))))
+                (append (list :event-id read
+                              :ts (or event-ts (neoment--now-ms))
+                              :is-local t)
+                        (and event-ts (list :event-ts event-ts))))))
       (setf (neoment-room-unread room) nil))
     (neoment-api-request
      'post (neoment-api-room-path room-id "read_markers")

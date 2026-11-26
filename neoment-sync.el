@@ -126,9 +126,11 @@ The status starts over when the client changes."
         (remhash room-id (neoment-client-invited-rooms neoment--client))
         (dolist (event (neoment-json-get data 'account_data 'events))
           (when (neoment-events-handle room event) (setq changed t)))
-        (when (neoment-events-handle-multiple
-               room (neoment-json-get data 'timeline 'events))
-          (setq changed t))
+        (let ((neoment-events--timeline-limited
+               (eq (neoment-json-get data 'timeline 'limited) t)))
+          (when (neoment-events-handle-multiple
+                 room (neoment-json-get data 'timeline 'events))
+            (setq changed t)))
         (when (neoment-events-handle-multiple
                room (neoment-json-get data 'state 'events))
           (setq changed t))

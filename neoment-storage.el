@@ -260,6 +260,10 @@ Each alist maps a name (string) to non-nil when folded."
                             (neoment-storage--plist-to-alist
                              (neoment-room-last-activity room))
                           :null))
+      (unread_activity . ,(if (neoment-room-unread-activity room)
+                              (neoment-storage--plist-to-alist
+                               (neoment-room-unread-activity room))
+                            :null))
       (is_direct . ,(neoment-storage--bool (neoment-room-is-direct room)))
       (is_favorite . ,(neoment-storage--bool (neoment-room-is-favorite room)))
       (is_lowpriority . ,(neoment-storage--bool (neoment-room-is-lowpriority room)))
@@ -300,6 +304,13 @@ Each alist maps a name (string) to non-nil when folded."
                :last-activity (and (alist-get 'last_activity data)
                                    (neoment-storage--alist-to-plist
                                     (alist-get 'last_activity data)))
+               ;; A cache from an older version has no unread_activity key.
+               ;; A null value means the room has no unread activity.
+               :unread-activity (let ((activity (if (assq 'unread_activity data)
+                                                    (alist-get 'unread_activity data)
+                                                  (alist-get 'last_activity data))))
+                                  (and activity
+                                       (neoment-storage--alist-to-plist activity)))
                :is-direct (neoment-storage--parse-bool (alist-get 'is_direct data))
                :is-favorite (neoment-storage--parse-bool (alist-get 'is_favorite data))
                :is-lowpriority (neoment-storage--parse-bool

@@ -10,6 +10,7 @@
 (require 'test-helper)
 (require 'neoment-notification-settings)
 (require 'neoment-notify)
+(require 'neoment-events)
 
 (defun neoment-notif-test-rules (&rest specs)
   "Return a push ruleset built from SPECS.
@@ -267,6 +268,65 @@ Each spec is (KIND RULE-ID ENABLED ACTIONS [CONDITIONS])."
   "Return a message ID by SENDER with CONTENT at TS."
   (neoment-message--create :id id :sender sender :content content :timestamp ts))
 
+(defun neoment-notif-test-sync (room &rest events)
+  "Apply EVENTS to ROOM as one live sync timeline.
+Each event is (ID BODY TS) for a message from Alice, or (redact ID TS)."
+  (neoment-events-handle-multiple
+   room
+   (mapcar (lambda (e)
+             (if (eq (car e) 'redact)
+                 (neoment-test-event "m.room.redaction" :id (format "$x%s" (nth 1 e))
+                                     :ts (nth 2 e) :content `((redacts . ,(nth 1 e))))
+               (neoment-test-event "m.room.message" :id (nth 0 e) :ts (nth 2 e)
+                                   :content `((msgtype . "m.text") (body . ,(nth 1 e))))))
+           events)))
+
+;; A message redacted live in the same sync is never notification text,
+;; whether the room is open (tracked) or not.
+(ert-deftest neoment-notif-redacted-in-same-sync ()
+  (dolist (tracked '(nil t))
+    (neoment-notif-decision-test
+      (neoment-notify-clear-candidates)
+      (neoment-room-set-tracked room tracked)
+      (setf (neoment-room-read-receipt room) '(:event-id "$x" :ts 1))
+      (neoment-notif-test-sync room '("$1" "hi" 10) '("$2" "spam" 20) '(redact "$2" 30))
+      (neoment-notify-room-counts-changed room 0 0 2 0)
+      (should (equal sent '(("[dev] Alice" "hi"))))
+      (unless tracked
+        (should (zerop (hash-table-count (neoment-room-pending-events room))))
+        ;; The room list preview shows the redaction, not the spam.
+        (let ((last (neoment-room-last-message room)))
+          (should (neoment-message-was-redacted last))
+          (should (equal (neoment-message-content last) "[Redacted]")))))
+    ;; A redacted applied edit never leaks its text.
+    (neoment-notif-decision-test
+      (neoment-notify-clear-candidates)
+      (neoment-room-set-tracked room tracked)
+      (setf (neoment-room-read-receipt room) '(:event-id "$x" :ts 1))
+      (neoment-events-handle-multiple
+       room
+       (list (neoment-test-event "m.room.message" :id "$1" :ts 10
+                                 :content '((msgtype . "m.text") (body . "hi")))
+             (neoment-test-event
+              "m.room.message" :id "$e" :ts 20
+              :content '((msgtype . "m.text") (body . "* secret")
+                         (m.new_content . ((msgtype . "m.text") (body . "secret")))
+                         (m.relates_to . ((rel_type . "m.replace") (event_id . "$1")))))
+             (neoment-test-event "m.room.redaction" :id "$xe" :ts 30
+                                 :content '((redacts . "$e")))))
+      (neoment-notify-room-counts-changed room 0 0 1 0)
+      (should (equal sent '(("dev" "New notification"))))
+      (should-not (seq-find (lambda (m) (equal (neoment-message-content m) "secret"))
+                            (hash-table-values (neoment-room-messages room)))))
+    ;; Only the redacted message: generic text, never the spam.
+    (neoment-notif-decision-test
+      (neoment-notify-clear-candidates)
+      (neoment-room-set-tracked room tracked)
+      (setf (neoment-room-read-receipt room) '(:event-id "$x" :ts 1))
+      (neoment-notif-test-sync room '("$2" "spam" 20) '(redact "$2" 30))
+      (neoment-notify-room-counts-changed room 0 0 1 0)
+      (should (equal sent '(("dev" "New notification")))))))
+
 (ert-deftest neoment-notif-decisions ()
   ;; Rising count with a candidate.
   (neoment-notif-decision-test
@@ -276,6 +336,42 @@ Each spec is (KIND RULE-ID ENABLED ACTIONS [CONDITIONS])."
     (neoment-notify-add-candidate room (neoment-notif-test-message "$3" "@me:s" "mine" 3))
     (neoment-notify-room-counts-changed room 0 0 2 0)
     (should (equal sent '(("[dev] Alice" "hi")))))
+  ;; A redacted message never replaces a real candidate or the fallback.
+  (neoment-notif-decision-test
+    (neoment-notify-clear-candidates)
+    (neoment-notify-add-candidate room (neoment-notif-test-message "$1" "@alice:s" "hi" 1))
+    (let ((r (neoment-notif-test-message "$r" "@alice:s" "[Redacted]" 2)))
+      (setf (neoment-message-was-redacted r) t)
+      (neoment-notify-add-candidate room r))
+    (neoment-notify-room-counts-changed room 0 0 1 0)
+    (should (equal sent '(("[dev] Alice" "hi")))))
+  (neoment-notif-decision-test
+    (puthash "$s" (neoment-notif-test-message "$s" "@alice:s" "stored" 50) (neoment-room-messages room))
+    (let ((r (neoment-notif-test-message "$r" "@alice:s" "[Redacted]" 60)))
+      (setf (neoment-message-was-redacted r) t)
+      (puthash "$r" r (neoment-room-messages room)))
+    (setf (neoment-room-read-receipt room) '(:event-id "$x" :ts 10))
+    (neoment-notify-room-counts-changed room 0 0 1 0)
+    (should (equal (car sent) '("[dev] Alice" "stored"))))
+  ;; A candidate redacted live after it was added falls back to stored text.
+  (neoment-notif-decision-test
+    (neoment-notify-clear-candidates)
+    (puthash "$1" (neoment-notif-test-message "$1" "@alice:s" "hi" 50) (neoment-room-messages room))
+    (let ((spam (neoment-notif-test-message "$2" "@alice:s" "spam" 60)))
+      (puthash "$2" spam (neoment-room-messages room))
+      (neoment-notify-add-candidate room spam)
+      (setf (neoment-message-was-redacted spam) t
+            (neoment-message-content spam) "[Redacted: spam]"))
+    (setf (neoment-room-read-receipt room) '(:event-id "$x" :ts 10))
+    (neoment-notify-room-counts-changed room 0 0 1 0)
+    (should (equal sent '(("[dev] Alice" "hi")))))
+  ;; Candidates added out of order still pick the newest.
+  (neoment-notif-decision-test
+    (neoment-notify-clear-candidates)
+    (neoment-notify-add-candidate room (neoment-notif-test-message "$2" "@alice:s" "new" 20))
+    (neoment-notify-add-candidate room (neoment-notif-test-message "$1" "@alice:s" "old" 10))
+    (neoment-notify-room-counts-changed room 0 0 1 0)
+    (should (equal sent '(("[dev] Alice" "new")))))
   ;; Unchanged or decreasing counts.
   (neoment-notif-decision-test
     (neoment-notify-add-candidate room (neoment-notif-test-message "$1" "@alice:s" "hi" 1))

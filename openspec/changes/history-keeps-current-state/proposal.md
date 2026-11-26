@@ -11,7 +11,7 @@ Back-pagination applies old state events to the room's current state (issue #13)
 - Display names learned from history membership events keep the existing rule that older names never replace newer ones. This change doesn't touch that rule.
 - Events from `/sync` (timeline and state), `GET /rooms/<r>/state` (refresh state) and account data behave as they do today.
 
-Out of scope: `/sync` applies the `state` block after the `timeline` block, although the `state` block describes the room before the timeline. That is a separate ordering issue and gets its own change.
+Out of scope: `/sync` applies the `state` block after the `timeline` block, although the `state` block describes the room before the timeline. That is a separate ordering issue, tracked in #48.
 
 ## Capabilities
 

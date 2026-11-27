@@ -76,13 +76,8 @@
          (when (eq client neoment--client)
            (let ((name (neoment-json-get (plist-get result :ok) 'displayname)))
              ;; Remember failures too, so the name is not fetched again.
-             ;; A fetched name is current, so it is newer than any
-             ;; name from history.  A failure keeps timestamp 0, so a
-             ;; member event can still supply the name.
              (unless (neoment-has-display-name user-id)
-               (puthash user-id (if (stringp name)
-                                    (cons name (neoment--now-ms))
-                                  (cons nil 0))
+               (puthash user-id (cons (and (stringp name) name) 0)
                         (neoment-client-display-names client)))
              (when (stringp name)
                (neoment-client-mark-room-changed nil)))))))))
@@ -264,8 +259,20 @@ Replies are not resolved here."
    :age (neoment-events--get event 'unsigned 'age)
    :is-state t))
 
-(defun neoment-events-member-message (event)
-  "Return the membership state message of the `m.room.member' EVENT, or nil."
+(defun neoment-events--history-may-set-name-p (user-id timestamp)
+  "Return non-nil when a history name of USER-ID at TIMESTAMP may be stored.
+History may fill in an unknown name, or replace one from an older
+event.  A name stored with timestamp 0 came from `joined_members' or
+the profile and is current, so history never replaces it."
+  (let ((old (gethash user-id (neoment-client-display-names neoment--client))))
+    (or (null (car old))
+        (and (> (or (cdr old) 0) 0)
+             (>= (or timestamp 0) (cdr old))))))
+
+(defun neoment-events-member-message (event &optional is-history)
+  "Return the membership state message of the `m.room.member' EVENT, or nil.
+When IS-HISTORY is non-nil, EVENT comes from paginated history and its
+display name never replaces a current one."
   (let* ((content (alist-get 'content event))
          (membership (alist-get 'membership content))
          (prev (neoment-events--get event 'unsigned 'prev_content))
@@ -316,7 +323,10 @@ Replies are not resolved here."
                  "is re-knocking on the room"
                "is knocking on the room")))))
     (when action
-      (when (stringp (alist-get 'displayname content))
+      (when (and (stringp (alist-get 'displayname content))
+                 (or (not is-history)
+                     (neoment-events--history-may-set-name-p
+                      target (alist-get 'origin_server_ts event))))
         (neoment-set-display-name target (alist-get 'displayname content)
                                   (or (alist-get 'origin_server_ts event) 0)))
       (neoment-events--state-message
@@ -595,7 +605,7 @@ when the room changed in a way that needs a re-render."
                        :replacement-room (alist-get 'replacement_room content))))
          t)
         ("m.room.member"
-         (let ((message (neoment-events-member-message event))
+         (let ((message (neoment-events-member-message event is-history))
                (membership (alist-get 'membership content))
                (target (alist-get 'state_key event)))
            (unless is-history

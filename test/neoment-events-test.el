@@ -493,6 +493,33 @@
      t)
     (should (equal (neoment-display-name "@bob:s") "Bob2"))))
 
+(ert-deftest neoment-events-sync-replaces-fetched-display-name ()
+  ;; A live member event is current state, even when its server
+  ;; timestamp is older than the moment the name was fetched.
+  (neoment-events-test
+    (remhash "@bob:s" (neoment-client-display-names neoment--client))
+    (neoment-test-with-http (lambda (_) '(:ok ((displayname . "Bob Global"))))
+      (neoment-events-fetch-display-name "@bob:s"))
+    (neoment-events-handle
+     room (neoment-test-event "m.room.member" :ts 100 :sender "@bob:s" :state-key "@bob:s"
+                              :content '((membership . "join") (displayname . "Bob Room"))))
+    (should (equal (neoment-display-name "@bob:s") "Bob Room"))
+    (neoment-events-handle
+     room (neoment-test-event "m.room.member" :ts (- (neoment--now-ms) 60000)
+                              :sender "@bob:s" :state-key "@bob:s"
+                              :content '((membership . "join") (displayname . "Robert"))))
+    (should (equal (neoment-display-name "@bob:s") "Robert"))))
+
+(ert-deftest neoment-events-history-replaces-older-event-name ()
+  ;; A name from an older event can still be replaced by history.
+  (neoment-events-test
+    (neoment-events-handle-multiple
+     room (list (neoment-test-event "m.room.member" :ts 500 :sender "@bob:s"
+                                    :state-key "@bob:s"
+                                    :content '((membership . "join") (displayname . "Bob5"))))
+     t)
+    (should (equal (neoment-display-name "@bob:s") "Bob5"))))
+
 (ert-deftest neoment-events-failed-fetch-lets-member-event-name ()
   (neoment-events-test
     (remhash "@dan:s" (neoment-client-display-names neoment--client))

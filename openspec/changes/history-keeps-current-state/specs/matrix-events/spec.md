@@ -45,6 +45,10 @@ State events from a paginated history page (both `chunk` and `state` of `GET /ro
 - **WHEN** the display name `Bob2` of `@bob:s` was learned from `joined_members` or `GET /profile`, and a history page then delivers a `join` for `@bob:s` at ts 100 with displayname `Bob1`
 - **THEN** the display name of `@bob:s` is still `Bob2`
 
+#### Scenario: Live member event replaces a fetched display name
+- **WHEN** the display name `Bob Global` of `@bob:s` was learned from `GET /profile`, and a sync then delivers a `join` for `@bob:s` with displayname `Bob Room` and a server timestamp older than the fetch
+- **THEN** the display name of `@bob:s` is `Bob Room`
+
 #### Scenario: Sync still applies state
 - **WHEN** a history page delivers `m.room.name` `Old`, and a sync then delivers `m.room.name` `New`
 - **THEN** the room name is `New`
@@ -93,7 +97,7 @@ Other memberships produce no message.
 - **THEN** the text is `Membership: B changed display name from A to B`
 
 ### Requirement: Display names and effective ids
-A user's display name SHALL be the most recent by timestamp. A name learned from `joined_members` or from `GET /profile` is current, so it SHALL be stored with the time it was learned. Otherwise the name is fetched asynchronously from `GET /profile/<user>/displayname` and cached, falling back to the user id. A failed fetch SHALL NOT stop a later member event from supplying the name. A message's effective id for replying and reacting SHALL be `edit_data.id` when edited, otherwise `id`.
+A member event from outside paginated history SHALL set the user's display name unless a newer member event already set it. A name learned from `joined_members` or from `GET /profile` is current: a later live member event replaces it, but a member event from history SHALL NOT. A history member event MAY set the name when none is known, or when the known name came from an older member event. When no name is known, it is fetched asynchronously from `GET /profile/<user>/displayname` and cached, falling back to the user id. A failed fetch SHALL NOT stop a later member event from supplying the name. A message's effective id for replying and reacting SHALL be `edit_data.id` when edited, otherwise `id`.
 
 #### Scenario: React to edited message
 - **WHEN** the user reacts to a message that was edited

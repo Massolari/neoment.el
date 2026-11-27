@@ -829,6 +829,16 @@ NAME that ends on a glyph boundary."
      t)
     (should (equal (neoment-display-name "@new:s") "Newbie"))))
 
+(ert-deftest neoment-room-sync-replaces-fetched-member-name ()
+  (neoment-room-test
+    (neoment-test-with-http
+        (lambda (_) '(:ok ((joined (@new:s (display_name . "Newbie"))))))
+      (neoment-room--fetch-members "!r:s"))
+    (neoment-events-handle
+     room (neoment-test-event "m.room.member" :ts 100 :sender "@new:s" :state-key "@new:s"
+                              :content '((membership . "join") (displayname . "Renamed"))))
+    (should (equal (neoment-display-name "@new:s") "Renamed"))))
+
 (ert-deftest neoment-room-open-same-display-name ()
   (neoment-room-test
     (setf (neoment-room-name (neoment-get-room "!other:s")) "dev")

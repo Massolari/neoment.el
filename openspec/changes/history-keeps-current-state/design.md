@@ -10,7 +10,7 @@ Two things already give the client its current state without help from history:
 
 So history never needs to fill in missing current state. It only adds older timeline entries.
 
-Display names from membership events already go through `neoment-set-display-name`, which keeps the newest name by timestamp. Names from `joined_members` and `GET /profile` used to be stored with timestamp 0, so any history event could replace them. They describe the present, so they are now stored with the time they were learned. A failed profile fetch keeps timestamp 0, so a member event can still supply the name.
+Display names from membership events already go through `neoment-set-display-name`, which keeps the newest name by timestamp. Names from `joined_members` and `GET /profile` are stored with timestamp 0, so any history event could replace them. They describe the present, but storing them with the local clock would let them beat live `/sync` events, because `origin_server_ts` comes from another clock and a lazy-loaded member event carries its old join time. So the rule depends on where the event comes from instead: `neoment-events-member-message` takes `is-history`, and a history event sets the name only when none is known or the known one came from an older member event (timestamp above 0). Live events keep the existing rule, so a fetched name always gives way to them. A failed profile fetch stores `(nil . 0)`, which counts as unknown.
 
 ## Goals / Non-Goals
 

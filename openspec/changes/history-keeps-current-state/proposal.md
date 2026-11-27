@@ -8,7 +8,7 @@ Back-pagination applies old state events to the room's current state (issue #13)
 
 - State events delivered by a history page (`GET /rooms/<r>/messages`, both `chunk` and `state`) SHALL NOT change the room's current state: `name`, `topic`, `avatar_url`, `tombstone`, `aliases`, `members` and `space_rooms`.
 - History state events SHALL still add their timeline entries: `Membership: …` text and the canonical-alias state message.
-- Display names learned from history membership events keep the existing rule that older names never replace newer ones. Names learned from `joined_members` and `GET /profile` are current, so they are stored with the time they were learned instead of timestamp 0. History can no longer replace them.
+- Display names learned from history membership events keep the existing rule that older names never replace newer ones. Names learned from `joined_members` and `GET /profile` are current, so a history member event no longer replaces them. Live member events still do.
 - Events from `/sync` (timeline and state), `GET /rooms/<r>/state` (refresh state) and account data behave as they do today.
 
 Out of scope: `/sync` applies the `state` block after the `timeline` block, although the `state` block describes the room before the timeline. That is a separate ordering issue, tracked in #48.
@@ -25,7 +25,6 @@ None.
 
 ## Impact
 
-- `neoment-events.el`: `neoment-events-handle` and `neoment-events--handle-canonical-alias` skip state changes when `is-history` is non-nil. `neoment-events-fetch-display-name` stores fetched names with the current time.
-- `neoment-room.el`: `neoment-room--fetch-members` stores display names with the current time.
+- `neoment-events.el`: `neoment-events-handle` and `neoment-events--handle-canonical-alias` skip state changes when `is-history` is non-nil. `neoment-events-member-message` takes `is-history` and doesn't let a history event replace a fetched display name.
 - `test/neoment-events-test.el`: new regression tests for history name, topic, avatar, tombstone, aliases, membership and space child events.
 - No change to the API, the user commands or the callers (`neoment-room-load-history` already passes `is-history` = t).

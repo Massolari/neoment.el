@@ -1136,9 +1136,8 @@ CALLBACK, if non-nil, is called with (:ok nil) or (:error ERR)."
                  (name (alist-get 'display_name (cdr pair))))
              (puthash user t (neoment-room-members room))
              (when (stringp name)
-               ;; The name is current, so history can't replace it.
                (unless (neoment-has-display-name user)
-                 (neoment-set-display-name user name (neoment--now-ms))))))
+                 (neoment-set-display-name user name 0)))))
          (neoment-room-refresh room-id))))))
 
 (defun neoment-room--setup-buffer (buffer room-id &optional thread-root-id initial)

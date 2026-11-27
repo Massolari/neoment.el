@@ -19,8 +19,8 @@
 
 ## 4. Display names learned from the server
 
-- [x] 4.1 Add tests that a name from `GET /profile` (`neoment-events-fetch-display-name`) and from `joined_members` (`neoment-room--fetch-members`) isn't replaced by an older name from a history `join`, and that a failed profile fetch still lets a member event supply the name. Verify with `make test` that the first two fail first.
-- [x] 4.2 Store names from `joined_members` and successful profile fetches with `neoment--now-ms` instead of 0. Verify that the 4.1 tests pass.
+- [x] 4.1 Add tests that a name from `GET /profile` (`neoment-events-fetch-display-name`) and from `joined_members` (`neoment-room--fetch-members`) isn't replaced by an older name from a history `join`, and that a failed profile fetch still lets a member event supply the name. Also add tests that a live member event replaces a fetched name, even with a server timestamp older than the fetch, and that history still replaces a name from an older member event. Verify with `make test` that the history tests fail first.
+- [x] 4.2 Add an `is-history` argument to `neoment-events-member-message`, pass it from `neoment-events-handle`, and under history set the display name only when none is known or the known one came from an older member event (timestamp above 0). Keep fetched names at timestamp 0. Verify that the 4.1 tests pass.
 
 ## 5. Integration check
 

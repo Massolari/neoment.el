@@ -1510,29 +1510,46 @@ Each entry is (PATH . CALLBACK); nothing is sent."
         (should (neoment-message-placeholder replied))
         (should-not (neoment-message-content replied))))))
 
-(ert-deftest neoment-events-late-reply-response-from-previous-client ()
-  (neoment-events-test
-    (neoment-events-test-capture-api
-      (neoment-events-test-handle-reply room "$reply")
-      (let ((old (cdr (seq-find (lambda (c) (string-search "/event/" (car c)))
-                                api-calls))))
-        (let* ((room (neoment-events-test-switch-client))
-               (_ (should (zerop (hash-table-count neoment-events--reply-cache))))
-               (reply (neoment-events-test-handle-reply room "$reply2"))
-               (replied (neoment-message-replying-to reply))
-               (entry (gethash "!r:s $orig" neoment-events--reply-cache)))
-          (should entry)
-          ;; A late failure must not drop the new client's in-flight entry.
-          (funcall old '(:error (:error "x")))
-          (should (eq (gethash "!r:s $orig" neoment-events--reply-cache) entry))
-          (should (eq (neoment-message-replying-to reply) replied))
-          ;; A late success must not fill the new client's placeholder.
-          (funcall old '(:ok ((type . "m.room.message") (event_id . "$orig")
-                              (sender . "@bob:s") (origin_server_ts . 5)
-                              (content . ((body . "secret"))))))
-          (should (eq (gethash "!r:s $orig" neoment-events--reply-cache) entry))
-          (should (neoment-message-placeholder replied))
-          (should-not (neoment-message-content replied)))))))
+(defmacro neoment-events-test-late-reply (&rest body)
+  "Run BODY after a reply fetch, a client switch and a new fetch of $orig.
+BODY sees `old', the previous client's callback, `reply', the new
+client's message, `replied', its placeholder, and `entry', its cache
+entry."
+  (declare (indent 0))
+  `(neoment-events-test
+     (neoment-events-test-capture-api
+       (neoment-events-test-handle-reply room "$reply")
+       (let* ((old (cdr (seq-find (lambda (c) (string-search "/event/" (car c)))
+                                  api-calls)))
+              (room (neoment-events-test-switch-client))
+              (_ (should (zerop (hash-table-count neoment-events--reply-cache))))
+              (reply (neoment-events-test-handle-reply room "$reply2"))
+              (replied (neoment-message-replying-to reply))
+              (entry (gethash "!r:s $orig" neoment-events--reply-cache)))
+         (should entry)
+         ,@body))))
+
+(ert-deftest neoment-events-late-reply-error-from-previous-client ()
+  (neoment-events-test-late-reply
+    ;; A late failure must not drop the new client's in-flight entry.
+    (funcall old '(:error (:error "x")))
+    (should (eq (gethash "!r:s $orig" neoment-events--reply-cache) entry))
+    (should (memq reply (plist-get entry :waiting)))
+    (should (eq (neoment-message-replying-to reply) replied))))
+
+(ert-deftest neoment-events-late-reply-success-from-previous-client ()
+  (neoment-events-test-late-reply
+    ;; A late success must not touch the new client's entry or waiters.
+    (let ((mentions (copy-sequence (neoment-message-mentions reply))))
+      (funcall old '(:ok ((type . "m.room.message") (event_id . "$orig")
+                          (sender . "@bob:s") (origin_server_ts . 5)
+                          (content . ((body . "secret")
+                                      (m.mentions . ((user_ids . ["@old:s"]))))))))
+      (should (eq (gethash "!r:s $orig" neoment-events--reply-cache) entry))
+      (should (memq reply (plist-get entry :waiting)))
+      (should (equal (neoment-message-mentions reply) mentions))
+      (should (neoment-message-placeholder replied))
+      (should-not (neoment-message-content replied)))))
 
 (ert-deftest neoment-events-late-display-name-response-keeps-new-fetch ()
   (neoment-events-test

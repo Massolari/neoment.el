@@ -27,6 +27,7 @@ None.
 - `matrix-events`: "Canonical alias handling" no longer names the room. "Room account data and state events" says how an empty `m.room.name` is handled. "Derived room rules" adds the alias step to the display-name order.
 - `matrix-sync`: "Invited rooms" keeps the alias separate from the name, and an explicit name wins. "Room name from heroes" applies only when the room has neither a name nor an alias.
 - `session-management`: "Compact room cache" stores `explicit_name` and migrates a legacy alias-derived `name`.
+- `rooms-list`: "Refresh room state" names the room by its display name in the `u` messages.
 
 ## Impact
 

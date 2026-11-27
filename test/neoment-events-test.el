@@ -1505,6 +1505,8 @@
                (back (neoment-has-room "!r:s")))
           (should (assq 'explicit_name saved))
           (should (null (alist-get 'explicit_name saved)))
+          ;; `name' is still written for older versions reading the cache.
+          (should (equal (alist-get 'name saved) "!r:s"))
           (should (equal (neoment-room-name back) "!r:s"))
           (should (equal (neoment-room-display-name "!r:s") "#old:s"))
           (neoment-events-handle back (neoment-test-event "m.room.canonical_alias" :ts 2

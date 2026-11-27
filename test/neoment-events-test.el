@@ -375,6 +375,173 @@
       (should (neoment-message-is-state msg)))
     (should (null (neoment-room-aliases room)))))
 
+;;;; History keeps current state (issue #13)
+
+(ert-deftest neoment-events-history-keeps-name ()
+  (neoment-events-test
+    (neoment-events-handle room (neoment-test-event "m.room.name" :ts 2000 :state-key ""
+                                                    :content '((name . "New"))))
+    (neoment-events-handle-multiple
+     room (list (neoment-test-event "m.room.name" :ts 100 :state-key ""
+                                    :content '((name . "Old"))))
+     t)
+    (should (equal (neoment-room-name room) "New"))))
+
+(ert-deftest neoment-events-history-keeps-topic-and-avatar ()
+  (neoment-events-test
+    (neoment-events-handle room (neoment-test-event "m.room.topic" :ts 2000 :state-key ""
+                                                    :content '((topic . "T2"))))
+    (neoment-events-handle room (neoment-test-event "m.room.avatar" :ts 2000 :state-key ""
+                                                    :content '((url . "mxc://s/a2"))))
+    (neoment-events-handle-multiple
+     room (list (neoment-test-event "m.room.topic" :ts 100 :state-key ""
+                                    :content '((topic . "T1")))
+                (neoment-test-event "m.room.avatar" :ts 100 :state-key ""
+                                    :content '((url . "mxc://s/a1"))))
+     t)
+    (should (equal (neoment-room-topic room) "T2"))
+    (should (equal (neoment-room-avatar-url room) "mxc://s/a2"))))
+
+(ert-deftest neoment-events-history-keeps-no-tombstone ()
+  (neoment-events-test
+    (should-not (neoment-room-tombstone room))
+    (neoment-events-handle-multiple
+     room (list (neoment-test-event "m.room.tombstone" :ts 100 :state-key ""
+                                    :content '((replacement_room . "!new:s"))))
+     t)
+    (should-not (neoment-room-tombstone room))))
+
+(ert-deftest neoment-events-history-keeps-space-rooms ()
+  (neoment-events-test
+    (neoment-events-handle-multiple
+     room (list (neoment-test-event "m.space.child" :ts 100 :state-key "!child:s"
+                                    :content '((via "s"))))
+     t)
+    (should-not (member "!child:s" (neoment-room-space-rooms room)))))
+
+(ert-deftest neoment-events-history-keeps-aliases ()
+  (neoment-events-test
+    (neoment-set-display-name "@alice:s" "Alice" 1)
+    (neoment-events-handle room (neoment-test-event "m.room.canonical_alias" :ts 2000
+                                                    :state-key ""
+                                                    :content '((alias . "#new:s"))))
+    (neoment-events-handle-multiple
+     room (list (neoment-test-event "m.room.canonical_alias" :id "$old" :ts 100
+                                    :state-key "" :content '((alias . "#old:s"))))
+     t)
+    (should (equal (neoment-room-aliases room) '("#new:s")))
+    (should (equal (neoment-message-content (neoment-room-get-message room "$old"))
+                   "Alice set the room aliases to #old:s"))))
+
+(ert-deftest neoment-events-history-alias-keeps-unnamed-room ()
+  (neoment-events-test
+    (should (equal (neoment-room-name room) "!r:s"))
+    (neoment-events-handle-multiple
+     room (list (neoment-test-event "m.room.canonical_alias" :ts 100 :state-key ""
+                                    :content '((alias . "#old:s"))))
+     t)
+    (should (equal (neoment-room-name room) "!r:s"))
+    (should-not (neoment-room-aliases room))))
+
+(ert-deftest neoment-events-history-keeps-member-on-old-leave ()
+  (neoment-events-test
+    (puthash "@bob:s" t (neoment-room-members room))
+    (let ((leave (neoment-test-event "m.room.member" :id "$leave" :ts 100
+                                     :sender "@bob:s" :state-key "@bob:s"
+                                     :content '((membership . "leave")))))
+      (neoment-events-handle-multiple room (list leave) t))
+    (should (neoment-room-is-member-p "!r:s" "@bob:s"))
+    (should (string-suffix-p " left the room"
+                             (neoment-message-content
+                              (neoment-room-get-message room "$leave"))))))
+
+(ert-deftest neoment-events-history-keeps-non-member-on-old-join ()
+  (neoment-events-test
+    (let ((join (neoment-test-event "m.room.member" :id "$join" :ts 100
+                                    :sender "@carol:s" :state-key "@carol:s"
+                                    :content '((membership . "join")))))
+      (neoment-events-handle-multiple room (list join) t))
+    (should-not (neoment-room-is-member-p "!r:s" "@carol:s"))
+    (should (string-suffix-p " joined the room"
+                             (neoment-message-content
+                              (neoment-room-get-message room "$join"))))))
+
+(ert-deftest neoment-events-history-keeps-newer-display-name ()
+  (neoment-events-test
+    (neoment-events-handle
+     room (neoment-test-event "m.room.member" :ts 2000 :sender "@bob:s" :state-key "@bob:s"
+                              :content '((membership . "join") (displayname . "Bob2"))))
+    (neoment-events-handle-multiple
+     room (list (neoment-test-event "m.room.member" :ts 100 :sender "@bob:s"
+                                    :state-key "@bob:s"
+                                    :content '((membership . "join") (displayname . "Bob1"))))
+     t)
+    (should (equal (neoment-display-name "@bob:s") "Bob2"))))
+
+(ert-deftest neoment-events-history-keeps-fetched-display-name ()
+  ;; A name fetched from the profile is current, so an old name from
+  ;; history doesn't replace it.
+  (neoment-events-test
+    (remhash "@bob:s" (neoment-client-display-names neoment--client))
+    (neoment-test-with-http (lambda (_) '(:ok ((displayname . "Bob2"))))
+      (neoment-events-fetch-display-name "@bob:s"))
+    (should (equal (neoment-display-name "@bob:s") "Bob2"))
+    (neoment-events-handle-multiple
+     room (list (neoment-test-event "m.room.member" :ts 100 :sender "@bob:s"
+                                    :state-key "@bob:s"
+                                    :content '((membership . "join") (displayname . "Bob1"))))
+     t)
+    (should (equal (neoment-display-name "@bob:s") "Bob2"))))
+
+(ert-deftest neoment-events-sync-replaces-fetched-display-name ()
+  ;; A live member event is current state, even when its server
+  ;; timestamp is older than the moment the name was fetched.
+  (neoment-events-test
+    (remhash "@bob:s" (neoment-client-display-names neoment--client))
+    (neoment-test-with-http (lambda (_) '(:ok ((displayname . "Bob Global"))))
+      (neoment-events-fetch-display-name "@bob:s"))
+    (neoment-events-handle
+     room (neoment-test-event "m.room.member" :ts 100 :sender "@bob:s" :state-key "@bob:s"
+                              :content '((membership . "join") (displayname . "Bob Room"))))
+    (should (equal (neoment-display-name "@bob:s") "Bob Room"))
+    (neoment-events-handle
+     room (neoment-test-event "m.room.member" :ts (- (neoment--now-ms) 60000)
+                              :sender "@bob:s" :state-key "@bob:s"
+                              :content '((membership . "join") (displayname . "Robert"))))
+    (should (equal (neoment-display-name "@bob:s") "Robert"))))
+
+(ert-deftest neoment-events-history-replaces-older-event-name ()
+  ;; A name from an older event can still be replaced by history.
+  (neoment-events-test
+    (neoment-events-handle-multiple
+     room (list (neoment-test-event "m.room.member" :ts 500 :sender "@bob:s"
+                                    :state-key "@bob:s"
+                                    :content '((membership . "join") (displayname . "Bob5"))))
+     t)
+    (should (equal (neoment-display-name "@bob:s") "Bob5"))))
+
+(ert-deftest neoment-events-failed-fetch-lets-member-event-name ()
+  (neoment-events-test
+    (remhash "@dan:s" (neoment-client-display-names neoment--client))
+    (neoment-test-with-http (lambda (_) '(:error (:status 404 :error "nope")))
+      (neoment-events-fetch-display-name "@dan:s"))
+    (neoment-events-handle-multiple
+     room (list (neoment-test-event "m.room.member" :ts 100 :sender "@dan:s"
+                                    :state-key "@dan:s"
+                                    :content '((membership . "join") (displayname . "Dan"))))
+     t)
+    (should (equal (neoment-display-name "@dan:s") "Dan"))))
+
+(ert-deftest neoment-events-sync-applies-state-after-history ()
+  (neoment-events-test
+    (neoment-events-handle-multiple
+     room (list (neoment-test-event "m.room.name" :ts 100 :state-key ""
+                                    :content '((name . "Old"))))
+     t)
+    (neoment-events-handle room (neoment-test-event "m.room.name" :ts 2000 :state-key ""
+                                                    :content '((name . "New"))))
+    (should (equal (neoment-room-name room) "New"))))
+
 ;;;; 3.3 Message parsing
 
 (ert-deftest neoment-events-message-content ()

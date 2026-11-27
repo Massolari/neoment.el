@@ -278,8 +278,20 @@ Replies are not resolved here."
    :age (neoment-events--get event 'unsigned 'age)
    :is-state t))
 
-(defun neoment-events-member-message (event)
-  "Return the membership state message of the `m.room.member' EVENT, or nil."
+(defun neoment-events--history-may-set-name-p (user-id timestamp)
+  "Return non-nil when a history name of USER-ID at TIMESTAMP may be stored.
+History may fill in an unknown name, or replace one from an older
+event.  A name stored with timestamp 0 came from `joined_members' or
+the profile and is current, so history never replaces it."
+  (let ((old (gethash user-id (neoment-client-display-names neoment--client))))
+    (or (null (car old))
+        (and (> (or (cdr old) 0) 0)
+             (>= (or timestamp 0) (cdr old))))))
+
+(defun neoment-events-member-message (event &optional is-history)
+  "Return the membership state message of the `m.room.member' EVENT, or nil.
+When IS-HISTORY is non-nil, EVENT comes from paginated history and its
+display name never replaces a current one."
   (let* ((content (alist-get 'content event))
          (membership (alist-get 'membership content))
          (prev (neoment-events--get event 'unsigned 'prev_content))
@@ -330,7 +342,10 @@ Replies are not resolved here."
                  "is re-knocking on the room"
                "is knocking on the room")))))
     (when action
-      (when (stringp (alist-get 'displayname content))
+      (when (and (stringp (alist-get 'displayname content))
+                 (or (not is-history)
+                     (neoment-events--history-may-set-name-p
+                      target (alist-get 'origin_server_ts event))))
         (neoment-set-display-name target (alist-get 'displayname content)
                                   (or (alist-get 'origin_server_ts event) 0)))
       (neoment-events--state-message
@@ -566,26 +581,33 @@ The canonical alias comes first, followed by the alternative aliases."
               (cons (alist-get 'alias content)
                     (append (alist-get 'alt_aliases content) nil))))
 
-(defun neoment-events--handle-canonical-alias (room event)
-  "Handle the `m.room.canonical_alias' EVENT of ROOM."
+(defun neoment-events--handle-canonical-alias (room event &optional is-history)
+  "Handle the `m.room.canonical_alias' EVENT of ROOM.
+IS-HISTORY is non-nil for paginated history.  The state message is then
+still added, but the aliases and the name of ROOM are left unchanged."
   (let* ((content (alist-get 'content event))
          (aliases (neoment-events--aliases content))
          (sender (neoment-display-name (alist-get 'sender event))))
-    (setf (neoment-room-aliases room) aliases)
+    (unless is-history
+      (setf (neoment-room-aliases room) aliases))
     (neoment-room-add-message
      room (neoment-events--state-message
            event (if aliases
                      (format "%s set the room aliases to %s"
                              sender (string-join aliases ", "))
                    (format "%s removed the room aliases" sender))))
-    (when (and aliases (equal (neoment-room-name room) (neoment-room-id room)))
+    (when (and (not is-history)
+               aliases
+               (equal (neoment-room-name room) (neoment-room-id room)))
       (setf (neoment-room-name room) (car aliases)))
     t))
 
 (defun neoment-events-handle (room event &optional is-history)
   "Apply EVENT to ROOM.
-IS-HISTORY is non-nil for paginated history.  Return non-nil when the
-room changed in a way that needs a re-render."
+IS-HISTORY is non-nil for paginated history.  It turns off
+notifications and keeps the current state of ROOM unchanged: state
+events from history only add their timeline messages.  Return non-nil
+when the room changed in a way that needs a re-render."
   (let ((id (alist-get 'event_id event))
         (type (alist-get 'type event))
         (content (alist-get 'content event)))
@@ -610,39 +632,44 @@ room changed in a way that needs a re-render."
         ((or "m.room.message" "m.sticker")
          (neoment-events--handle-message room event is-history))
         ("m.room.name"
-         (let ((name (alist-get 'name content)))
-           (setf (neoment-room-name room)
-                 (if (and (stringp name) (not (string-empty-p name)))
-                     name
-                   (neoment-room-id room))))
+         (unless is-history
+           (let ((name (alist-get 'name content)))
+             (setf (neoment-room-name room)
+                   (if (and (stringp name) (not (string-empty-p name)))
+                       name
+                     (neoment-room-id room)))))
          t)
         ("m.room.canonical_alias"
-         (neoment-events--handle-canonical-alias room event))
+         (neoment-events--handle-canonical-alias room event is-history))
         ("m.room.topic"
-         (setf (neoment-room-topic room) (or (alist-get 'topic content) ""))
+         (unless is-history
+           (setf (neoment-room-topic room) (or (alist-get 'topic content) "")))
          t)
         ("m.room.avatar"
-         (setf (neoment-room-avatar-url room) (alist-get 'url content))
+         (unless is-history
+           (setf (neoment-room-avatar-url room) (alist-get 'url content)))
          t)
         ("m.room.tombstone"
-         (setf (neoment-room-tombstone room)
-               (list :body (or (alist-get 'body content)
-                               "This room has been upgraded")
-                     :replacement-room (alist-get 'replacement_room content)))
+         (unless is-history
+           (setf (neoment-room-tombstone room)
+                 (list :body (or (alist-get 'body content)
+                                 "This room has been upgraded")
+                       :replacement-room (alist-get 'replacement_room content))))
          t)
         ("m.room.member"
-         (let ((message (neoment-events-member-message event))
+         (let ((message (neoment-events-member-message event is-history))
                (membership (alist-get 'membership content))
                (target (alist-get 'state_key event)))
-           (pcase membership
-             ("join" (puthash target t (neoment-room-members room)))
-             ((or "leave" "ban") (remhash target (neoment-room-members room))))
+           (unless is-history
+             (pcase membership
+               ("join" (puthash target t (neoment-room-members room)))
+               ((or "leave" "ban") (remhash target (neoment-room-members room)))))
            (when message
              (neoment-room-add-message room message)
              t)))
         ("m.room.redaction" (neoment-events--handle-redaction room event))
         ("m.space.child"
-         (when content
+         (when (and content (not is-history))
            (neoment-room-add-space-child room (alist-get 'state_key event)))
          nil)
         ("m.reaction"

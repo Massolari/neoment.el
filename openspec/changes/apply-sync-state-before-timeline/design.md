@@ -2,7 +2,7 @@
 
 ## Context
 
-`neoment-sync--process-joined` (`neoment-sync.el:129-136`) calls `neoment-events-handle-multiple` twice per joined room: first on `timeline.events`, with `neoment-events--timeline-limited` bound to the `limited` flag, and then on `state.events`. Each call sorts only its own events by `origin_server_ts`. State handlers in `neoment-events-handle` (name, topic, avatar, canonical alias, tombstone, members) overwrite with no timestamp check, so the last call wins. See proposal.md for why that's wrong.
+Before this change, `neoment-sync--process-joined` (`neoment-sync.el`) called `neoment-events-handle-multiple` twice per joined room: first on `timeline.events`, with `neoment-events--timeline-limited` bound to the `limited` flag, and then on `state.events`. Each call sorts only its own events by `origin_server_ts`. State handlers in `neoment-events-handle` (name, topic, avatar, canonical alias, tombstone, members) overwrite with no timestamp check, so the last call wins. See proposal.md for why that's wrong.
 
 What I checked about the effects of the order:
 - `neoment-events--timeline-limited` is read only in `neoment-events--handle-message` (thread replies count as unread). State-block events are never messages, so the flag doesn't matter for them.
@@ -25,7 +25,7 @@ What I checked about the effects of the order:
 **Swap the two calls, keeping them separate.** Call `neoment-events-handle-multiple` on `state.events` (outside the `timeline-limited` binding) and then on `timeline.events` (inside it).
 
 Alternatives considered:
-- *Merge both blocks into one sorted call.* It would order events by timestamp, but `origin_server_ts` isn't reliable for state (state events can have older or skewed timestamps), and the state block is defined by its position, not its timestamps. It would also put the state events under the `timeline-limited` binding, and the batch-id handling would then cover two blocks. Rejected.
+- *Merge both blocks into one sorted call.* It would order state events from both blocks by timestamp, but `origin_server_ts` isn't reliable for state (state events can have older or skewed timestamps), and the state block is defined by its position relative to the timeline, not by its timestamps. Keeping the blocks separate makes the block order follow the Matrix spec regardless of timestamps. (Inside a single block, `neoment-events-handle-multiple` still sorts by `origin_server_ts`, so skewed timestamps within one block can still pick the wrong value. That is the existing behaviour and out of scope here; see proposal.md.) It would also put the state events under the `timeline-limited` binding, and the batch-id handling would then cover two blocks. Rejected.
 - *Per-handler timestamp guards (like display names).* This would affect every state type and history handling too, for no gain over the order the Matrix spec already defines. Rejected as out of scope.
 
 **Tests through `neoment-sync-process`.** Add the regression tests to `test/neoment-sync-test.el` with JSON sync bodies, like the existing `neoment-sync-limited-thread-reply-marks-unread`, so they check the real per-room order. The two existing limited / non-limited thread-reply tests stay as they are, to guard the unread logic.

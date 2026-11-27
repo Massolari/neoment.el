@@ -209,6 +209,45 @@ instead of running."
       (should-not (neoment-room-unread-activity room))
       (should-not (neoment-room-unread-p room)))))
 
+(defun neoment-sync-test-state-sync (state timeline)
+  "Return a limited sync for !r:s with STATE and TIMELINE event JSON lists."
+  (neoment-json-decode
+   (format "{\"rooms\":{\"join\":{\"!r:s\":{
+      \"state\":{\"events\":[%s]},
+      \"timeline\":{\"limited\":true,\"events\":[%s]}}}}}"
+           state timeline)))
+
+(ert-deftest neoment-sync-timeline-state-overrides-state-block ()
+  (neoment-sync-test (lambda (_) 'pending)
+    (neoment-sync-process
+     (neoment-sync-test-state-sync
+      "{\"type\":\"m.room.name\",\"event_id\":\"$n1\",\"sender\":\"@a:s\",
+        \"state_key\":\"\",\"origin_server_ts\":100,\"content\":{\"name\":\"Old\"}}"
+      "{\"type\":\"m.room.name\",\"event_id\":\"$n2\",\"sender\":\"@a:s\",
+        \"state_key\":\"\",\"origin_server_ts\":2000,\"content\":{\"name\":\"New\"}}"))
+    (should (equal (neoment-room-name (neoment-has-room "!r:s")) "New"))))
+
+(ert-deftest neoment-sync-timeline-join-overrides-state-leave ()
+  (neoment-sync-test (lambda (_) 'pending)
+    (neoment-sync-process
+     (neoment-sync-test-state-sync
+      "{\"type\":\"m.room.member\",\"event_id\":\"$m1\",\"sender\":\"@bob:s\",
+        \"state_key\":\"@bob:s\",\"origin_server_ts\":100,
+        \"content\":{\"membership\":\"leave\"}}"
+      "{\"type\":\"m.room.member\",\"event_id\":\"$m2\",\"sender\":\"@bob:s\",
+        \"state_key\":\"@bob:s\",\"origin_server_ts\":2000,
+        \"content\":{\"membership\":\"join\"}}"))
+    (should (gethash "@bob:s" (neoment-room-members (neoment-has-room "!r:s"))))))
+
+(ert-deftest neoment-sync-state-block-alone-applies ()
+  (neoment-sync-test (lambda (_) 'pending)
+    (neoment-sync-process
+     (neoment-sync-test-state-sync
+      "{\"type\":\"m.room.topic\",\"event_id\":\"$t1\",\"sender\":\"@a:s\",
+        \"state_key\":\"\",\"origin_server_ts\":100,\"content\":{\"topic\":\"Hello\"}}"
+      ""))
+    (should (equal (neoment-room-topic (neoment-has-room "!r:s")) "Hello"))))
+
 (ert-deftest neoment-sync-heroes-name ()
   (neoment-sync-test (lambda (_) 'pending)
     (neoment-set-display-name "@alice:s" "Alice" 1)

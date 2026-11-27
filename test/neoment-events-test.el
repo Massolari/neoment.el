@@ -682,22 +682,67 @@
 
 (ert-deftest neoment-events-threads ()
   (neoment-events-test
-    (neoment-events-handle
-     room (neoment-events-test-text "root" :id "$r" :ts 1
-                                    :unsigned '((m.relations . ((m.thread . ((count . 2))))))))
+    ;; The root and the live reply arrive in separate batches.
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-text
+                 "root" :id "$r" :ts 1
+                 :unsigned '((m.relations . ((m.thread . ((count . 2)))))))))
     (should (= (neoment-message-thread-replies-count (neoment-room-get-message room "$r")) 2))
-    (neoment-events-handle
-     room (neoment-events-test-text
-           "reply" :id "$t1" :ts 2
-           :extra '((m.relates_to . ((rel_type . "m.thread") (event_id . "$r")
-                                     (is_falling_back . t)
-                                     (m.in_reply_to . ((event_id . "$r"))))))))
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-text
+                 "reply" :id "$t1" :ts 2
+                 :extra '((m.relates_to . ((rel_type . "m.thread") (event_id . "$r")
+                                           (is_falling_back . t)
+                                           (m.in_reply_to . ((event_id . "$r")))))))))
     (let ((reply (neoment-room-get-message room "$t1")))
       (should (equal (neoment-message-thread-root-id reply) "$r"))
       (should-not (neoment-message-replying-to reply)))
     (should (= (neoment-message-thread-replies-count (neoment-room-get-message room "$r")) 3))
     ;; The thread fallback does not fetch the replied event.
     (should-not (seq-find (lambda (u) (string-search "/event/" u)) (neoment-test-request-urls)))))
+
+(defun neoment-events-test-thread-root (id count ts)
+  "Return a thread root event ID whose server count is COUNT, at TS."
+  (neoment-events-test-text "root" :id id :ts ts
+                            :unsigned `((m.relations . ((m.thread . ((count . ,count))))))))
+
+(defun neoment-events-test-thread-reply (id root ts)
+  "Return a thread reply event ID in thread ROOT at TS."
+  (neoment-events-test-text
+   "reply" :id id :ts ts
+   :extra `((m.relates_to . ((rel_type . "m.thread") (event_id . ,root)
+                             (is_falling_back . t)
+                             (m.in_reply_to . ((event_id . ,root))))))))
+
+(defun neoment-events-test-thread-count (room id)
+  "Return the thread replies count of message ID in ROOM."
+  (neoment-message-thread-replies-count (neoment-room-get-message room id)))
+
+(ert-deftest neoment-events-thread-same-batch-not-double-counted ()
+  (neoment-events-test
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-thread-reply "$t2" "$r" 3)
+                (neoment-events-test-thread-root "$r" 2 1)
+                (neoment-events-test-thread-reply "$t1" "$r" 2)))
+    (should (= (neoment-events-test-thread-count room "$r") 2))))
+
+(ert-deftest neoment-events-thread-history-not-double-counted ()
+  (neoment-events-test
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-thread-root "$r" 2 1)
+                (neoment-events-test-thread-reply "$t1" "$r" 2)
+                (neoment-events-test-thread-reply "$t2" "$r" 3))
+     t)
+    (should (= (neoment-events-test-thread-count room "$r") 2)))
+  ;; Replies from a newer page, then the root from an older page.
+  (neoment-events-test
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-thread-reply "$t1" "$r" 2)
+                (neoment-events-test-thread-reply "$t2" "$r" 3))
+     t)
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-thread-root "$r" 2 1)) t)
+    (should (= (neoment-events-test-thread-count room "$r") 2))))
 
 ;;;; 3.4 Edits, redactions and reactions
 

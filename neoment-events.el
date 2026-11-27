@@ -493,7 +493,7 @@ Return the message, or nil when ROOM does not store it."
                    (neoment-room-messages room))
           t))))
      ((null (alist-get 'content target)) nil)
-     ((equal (alist-get 'type target) "m.room.message")
+     ((member (alist-get 'type target) '("m.room.message" "m.sticker"))
       (let ((relates (neoment-events--get target 'content 'm.relates_to))
             (changed t))
         (if (and (equal (alist-get 'rel_type relates) "m.replace")

@@ -1014,6 +1014,33 @@
                                                     :content '((redacts . "$ed"))))
     (should-not (neoment-room-get-message room "$m2"))))
 
+(ert-deftest neoment-events-redact-sticker ()
+  (neoment-events-test
+    (neoment-events-handle
+     room (neoment-test-event "m.sticker" :id "$st" :ts 1
+                              :content '((body . "s") (url . "mxc://s/st"))))
+    (should (neoment-message-attachment (neoment-room-get-message room "$st")))
+    (should (neoment-events-handle
+             room (neoment-test-event "m.room.redaction" :id "$x" :ts 2
+                                      :content '((redacts . "$st") (reason . "oops")))))
+    (let ((m (neoment-room-get-message room "$st")))
+      (should (equal (neoment-message-content m) "[Redacted: oops]"))
+      (should (neoment-message-was-redacted m))
+      (should-not (neoment-message-attachment m)))))
+
+(ert-deftest neoment-events-pending-redaction-of-sticker ()
+  (neoment-events-test
+    (neoment-events-handle-multiple
+     room (list (neoment-test-event "m.room.redaction" :id "$x" :ts 1
+                                    :content '((redacts . "$st")))))
+    (neoment-events-handle-multiple
+     room (list (neoment-test-event "m.sticker" :id "$st" :ts 2
+                                    :content '((body . "s") (url . "mxc://s/st")))))
+    (let ((m (neoment-room-get-message room "$st")))
+      (should (equal (neoment-message-content m) "[Redacted]"))
+      (should (neoment-message-was-redacted m))
+      (should-not (neoment-message-attachment m)))))
+
 (ert-deftest neoment-events-edit-after-redaction ()
   (neoment-events-test
     (neoment-events-handle-multiple room (list (neoment-events-test-text "secret" :id "$s" :ts 1)))

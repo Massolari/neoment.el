@@ -1391,14 +1391,18 @@
           (should (equal (neoment-message-sender replied) "@bob:s"))
           (should (equal (neoment-message-content replied) "question")))))))
 
-(defun neoment-events-test-reply-fetch (fetched)
-  "Handle a reply to $orig, answer its fetch with FETCHED and return the reply."
+(defun neoment-events-test-reply-fetch (fetched &rest props)
+  "Handle a reply to $orig, answer its fetch with FETCHED and return the reply.
+PROPS are passed to `neoment-events-test-text'; their :extra is added to
+the reply relation."
   (let ((pending nil) (room (neoment-get-room "!r:s")))
     (neoment-test-with-http (lambda (args) (push args pending) 'pending)
       (neoment-events-handle
-       room (neoment-events-test-text
-             "answer" :id "$reply" :ts 10
-             :extra '((m.relates_to . ((m.in_reply_to . ((event_id . "$orig"))))))))
+       room (apply #'neoment-events-test-text
+                   "answer" :id "$reply" :ts 10
+                   :extra (cons '(m.relates_to . ((m.in_reply_to . ((event_id . "$orig")))))
+                                (plist-get props :extra))
+                   props))
       (let ((req (seq-find (lambda (r) (string-search "/event/" (plist-get r :url)))
                            pending)))
         (funcall (plist-get req :callback) fetched)))
@@ -1444,6 +1448,42 @@
                   '(:ok ((type . "m.room.message") (event_id . "$orig") (sender . "@bob:s")
                          (origin_server_ts . 5) (content))))))
       (should-not (neoment-message-replying-to reply)))))
+
+;; A reply's mentions are only its own `m.mentions', never the replied message's.
+(ert-deftest neoment-events-reply-loaded-mentions-not-inherited ()
+  (neoment-events-test
+    (neoment-events-test-reply-fetch
+     '(:ok ((type . "m.room.message") (event_id . "$orig") (sender . "@bob:s")
+            (origin_server_ts . 5)
+            (content . ((body . "hey @me") (m.mentions . ((user_ids "@me:s"))))))))
+    ;; $orig is now loaded in the reply cache.
+    (neoment-events-handle
+     room (neoment-events-test-text
+           "answer 2" :id "$reply2" :ts 11
+           :extra '((m.relates_to . ((m.in_reply_to . ((event_id . "$orig"))))))))
+    (let ((reply (neoment-room-get-message room "$reply2")))
+      (should-not (neoment-message-placeholder (neoment-message-replying-to reply)))
+      (should-not (neoment-message-mentions reply)))))
+
+(ert-deftest neoment-events-reply-fetched-mentions-not-inherited ()
+  (neoment-events-test
+    (let ((reply (neoment-events-test-reply-fetch
+                  '(:ok ((type . "m.room.message") (event_id . "$orig") (sender . "@bob:s")
+                         (origin_server_ts . 5)
+                         (content . ((body . "hey @me") (m.mentions . ((user_ids "@me:s")))))))
+                  :extra '((m.mentions . ((user_ids "@carol:s")))))))
+      (should-not (neoment-message-placeholder (neoment-message-replying-to reply)))
+      (should (equal (neoment-message-mentions reply) '("@carol:s"))))))
+
+(ert-deftest neoment-events-reply-to-own-message-no-implicit-mention ()
+  (neoment-events-test
+    (let ((reply (neoment-events-test-reply-fetch
+                  '(:ok ((type . "m.room.message") (event_id . "$orig") (sender . "@me:s")
+                         (origin_server_ts . 5) (content . ((body . "question")))))
+                  :sender "@bob:s")))
+      (should (equal (neoment-message-sender reply) "@bob:s"))
+      (should (equal (neoment-message-sender (neoment-message-replying-to reply)) "@me:s"))
+      (should-not (neoment-message-mentions reply)))))
 
 (ert-deftest neoment-events-display-name-fetch ()
   (let ((neoment--client nil) (requests 0) (changed nil))

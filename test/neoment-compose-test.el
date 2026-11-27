@@ -170,5 +170,61 @@
                                          'm.relates_to 'm.in_reply_to 'event_id)
                        "$orig"))))))
 
+;;;; Reply mentions
+
+(defun neoment-compose-test-send (text &rest open-args)
+  "Send TEXT from a compose buffer opened with OPEN-ARGS; return the content."
+  (save-window-excursion
+    (with-current-buffer (apply #'neoment-compose-open "!r:s" open-args)
+      (insert text)
+      (neoment-compose-send-and-close)))
+  (plist-get (car neoment-test--requests) :json))
+
+(defun neoment-compose-test-reply (text sender)
+  "Reply TEXT to a message from SENDER; return the sent content."
+  (neoment-compose-test-send
+   text :relation (list :type 'reply
+                        :message (neoment-message--create :id "$orig" :sender sender
+                                                          :content "x"))))
+
+(ert-deftest neoment-compose-reply-mentions-sender ()
+  (neoment-compose-test
+    (should (equal (alist-get 'm.mentions (neoment-compose-test-reply "ok" "@bob:s"))
+                   '((user_ids . ["@bob:s"]))))))
+
+(ert-deftest neoment-compose-reply-sender-merged-with-body-mentions ()
+  (neoment-compose-test
+    (should (equal (alist-get 'm.mentions (neoment-compose-test-reply "hi @alice:s" "@bob:s"))
+                   '((user_ids . ["@alice:s" "@bob:s"]))))))
+
+(ert-deftest neoment-compose-reply-sender-already-mentioned ()
+  (neoment-compose-test
+    (should (equal (alist-get 'm.mentions (neoment-compose-test-reply "hi @bob:s" "@bob:s"))
+                   '((user_ids . ["@bob:s"]))))))
+
+(ert-deftest neoment-compose-reply-to-own-message-no-mentions ()
+  (neoment-compose-test
+    (let ((content (neoment-compose-test-reply "ok" "@me:s")))
+      (should (alist-get 'm.relates_to content))
+      (should-not (alist-get 'm.mentions content)))))
+
+(ert-deftest neoment-compose-thread-without-reply-no-mentions ()
+  (neoment-compose-test
+    (let ((content (neoment-compose-test-send "ok" :thread-root-id "$root")))
+      (should (equal (alist-get 'm.relates_to content)
+                     '((rel_type . "m.thread") (event_id . "$root") (is_falling_back . t))))
+      (should-not (alist-get 'm.mentions content)))))
+
+;; Editing someone else's message does not mention them.
+(ert-deftest neoment-compose-edit-no-sender-mention ()
+  (neoment-compose-test
+    (let ((content (neoment-compose-test-send
+                    "fixed" :relation
+                    (list :type 'replace
+                          :message (neoment-message--create :id "$m" :sender "@bob:s"
+                                                            :content "x")))))
+      (should-not (alist-get 'm.mentions content))
+      (should-not (alist-get 'm.mentions (alist-get 'm.new_content content))))))
+
 (provide 'neoment-compose-test)
 ;;; neoment-compose-test.el ends here

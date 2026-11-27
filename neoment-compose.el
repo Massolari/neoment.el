@@ -73,18 +73,26 @@ Mentions of users with a known display name become links."
                  (format "<a href=\"https://matrix.to/#/%s\">%s</a>" user name)))))
           (nreverse mentions))))
 
-(cl-defun neoment-compose-message-content (body &key reply-to thread-root-id
-                                                replace attachment)
+(cl-defun neoment-compose-message-content (body &key reply-to reply-sender
+                                                thread-root-id replace attachment)
   "Return the `m.room.message' content for the markdown BODY.
-REPLY-TO is the event id replied to, THREAD-ROOT-ID the thread,
-REPLACE the event id being edited and ATTACHMENT a plist."
+REPLY-TO is the event id replied to and REPLY-SENDER the user id of its
+sender, THREAD-ROOT-ID the thread, REPLACE the event id being edited
+and ATTACHMENT a plist.
+`m.mentions' lists the body mentions, then REPLY-SENDER unless it is
+already listed or is the current user."
   (let* ((html (neoment-compose--html-with-mentions body))
+         (mentions (cdr html))
          (content `((msgtype . "m.text")
                     (body . ,body)
                     (format . "org.matrix.custom.html")
                     (formatted_body . ,(car html)))))
-    (when (cdr html)
-      (setq content (append content `((m.mentions . ((user_ids . ,(vconcat (cdr html)))))))))
+    (when (and reply-sender
+               (not (equal reply-sender (neoment-user-id)))
+               (not (member reply-sender mentions)))
+      (setq mentions (append mentions (list reply-sender))))
+    (when mentions
+      (setq content (append content `((m.mentions . ((user_ids . ,(vconcat mentions))))))))
     (let ((relates nil))
       (when thread-root-id
         (setq relates `((rel_type . "m.thread") (event_id . ,thread-root-id)
@@ -110,15 +118,19 @@ REPLACE the event id being edited and ATTACHMENT a plist."
                                        (size . ,(or (plist-get attachment :size) :null))))))))
     content))
 
-(cl-defun neoment-compose-send (room-id body &key reply-to thread-root-id replace
-                                        attachment callback)
+(cl-defun neoment-compose-send (room-id body &key reply-to reply-sender
+                                        thread-root-id replace attachment
+                                        callback)
   "Send BODY to ROOM-ID, see `neoment-compose-message-content'.
+REPLY-TO, REPLY-SENDER, THREAD-ROOT-ID, REPLACE and ATTACHMENT are
+passed to it, so REPLY-SENDER is added to `m.mentions'.
 On success the room's fully read marker moves to the new event, so
 the user's own message never shows as new.  CALLBACK, if non-nil,
 receives the result."
   (neoment-api-send-event
    room-id "m.room.message"
    (neoment-compose-message-content body :reply-to reply-to
+                                    :reply-sender reply-sender
                                     :thread-root-id thread-root-id
                                     :replace replace :attachment attachment)
    (lambda (result)
@@ -269,6 +281,8 @@ Nothing happens when the message is empty and there is no attachment."
          neoment--room-id body
          :reply-to (and (eq (plist-get relation :type) 'reply)
                         (neoment-message-effective-id message))
+         :reply-sender (and (eq (plist-get relation :type) 'reply)
+                            (neoment-message-sender message))
          :replace (and (eq (plist-get relation :type) 'replace)
                        (neoment-message-effective-id message))
          :thread-root-id neoment-compose--thread-root-id

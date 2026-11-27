@@ -212,11 +212,11 @@ When it is not known yet, return a placeholder and fetch the event."
 
 (defun neoment-events--content-attachment (content type)
   "Return the attachment of TYPE described by CONTENT, or nil.
-A location needs a `geo_uri'; every other TYPE needs an mxc `url', so an
-edit cannot replace a working attachment with an unusable one."
+A location needs a string `geo_uri'; every other TYPE needs an mxc `url',
+so an edit cannot replace a working attachment with an unusable one."
   (when (and type
              (if (eq type 'location)
-                 (alist-get 'geo_uri content)
+                 (stringp (alist-get 'geo_uri content))
                (neoment-events-mxc-p (alist-get 'url content))))
     (neoment-events--attachment content type)))
 

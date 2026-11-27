@@ -669,9 +669,12 @@
                                              (thumbnail_info . ((w . 1) (h . 2) (mimetype . "image/jpeg")))))))))
         (should (equal (plist-get (plist-get video :thumbnail) :url)
                        "https://hs.example/_matrix/client/v1/media/download/s/t")))
-      (let ((loc (att "m.location" '((url . "mxc://s/l") (geo_uri . "geo:-23.5,46.6")))))
+      (let ((loc (att "m.location" '((geo_uri . "geo:-23.5,46.6")))))
         (should (eq (plist-get loc :type) 'location))
         (should (equal (plist-get loc :url) "https://maps.google.com/?q=-23.5,46.6")))
+      ;; A location depends on a string geo_uri, never on url.
+      (should-not (att "m.location" '((url . "mxc://s/l"))))
+      (should-not (att "m.location" '((geo_uri . 5))))
       (let ((sticker (att nil '((url . "mxc://s/st")) "m.sticker")))
         (should (eq (plist-get sticker :type) 'image)))
       (should-not (att "m.image" nil))
@@ -829,7 +832,15 @@
                  "$le" "$t" "m.location" '((geo_uri . "geo:1.5,2.5")) 4)))
     (let ((att (neoment-message-attachment (neoment-room-get-message room "$t"))))
       (should (eq (plist-get att :type) 'location))
-      (should (equal (plist-get att :url) "https://maps.google.com/?q=1.5,2.5")))))
+      (should (equal (plist-get att :url) "https://maps.google.com/?q=1.5,2.5")))
+    ;; An edit with a non-string geo_uri keeps the working location.
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-attachment-edit
+                 "$le2" "$t" "m.location" '((geo_uri . 5)) 5)))
+    (should (equal (plist-get (neoment-message-attachment
+                               (neoment-room-get-message room "$t"))
+                              :url)
+                   "https://maps.google.com/?q=1.5,2.5"))))
 
 (ert-deftest neoment-events-edit-replaces-attachment ()
   (neoment-events-test

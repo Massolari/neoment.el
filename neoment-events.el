@@ -378,10 +378,23 @@ display name never replaces a current one."
   "Non-nil while applying a sync timeline that has a gap before it.
 Other users' thread replies then count as unread activity.")
 
+(defvar neoment-events--batch-ids nil
+  "Hash set of ids of thread roots with a server count, or nil.
+It holds the messages stored in the current batch that carry a positive
+`unsigned.m.relations.m.thread.count'.  `neoment-events-handle-multiple'
+binds it.  Such a count already includes the replies delivered in the
+same batch.")
+
 (defun neoment-events--handle-message (room event is-history)
   "Handle the message EVENT of ROOM.
 IS-HISTORY is non-nil for paginated history.  Return non-nil when the
-room changed."
+room changed.
+
+A thread reply adds one to its loaded root's replies count unless the
+root was stored in the same batch with a server count: that count
+already includes the replies that existed when the server sent the
+root.  A history reply's root is always in its own page or not loaded
+yet, so history never increments a server count."
   (let* ((content (alist-get 'content event))
          (relates (alist-get 'm.relates_to content))
          (event-ts (or (alist-get 'origin_server_ts event) 0)))
@@ -432,9 +445,16 @@ room changed."
           (setf (neoment-message-replying-to message)
                 (neoment-events--reply-to room in-reply-to message)))
         (neoment-room-add-message room message)
+        (when-let* ((neoment-events--batch-ids)
+                    (count (neoment-events--get event 'unsigned 'm.relations
+                                                'm.thread 'count))
+                    ((and (integerp count) (> count 0))))
+          (puthash (alist-get 'event_id event) t neoment-events--batch-ids))
         (unless is-history
           (neoment-notify-add-candidate room message))
         (when-let* ((root-id (neoment-message-thread-root-id message))
+                    ((not (and neoment-events--batch-ids
+                               (gethash root-id neoment-events--batch-ids))))
                     (root (neoment-room-get-message room root-id)))
           (setf (neoment-message-thread-replies-count root)
                 (1+ (or (neoment-message-thread-replies-count root) 0))))
@@ -707,8 +727,11 @@ when the room changed in a way that needs a re-render."
 (defun neoment-events-handle-multiple (room events &optional is-history)
   "Apply EVENTS to ROOM in timestamp order, with their pending events.
 IS-HISTORY is non-nil for paginated history.  Return non-nil when the
-room changed."
-  (let ((changed nil))
+room changed.  Recursive calls for pending events share the outer
+call's `neoment-events--batch-ids'."
+  (let ((changed nil)
+        (neoment-events--batch-ids (or neoment-events--batch-ids
+                                       (make-hash-table :test 'equal))))
     (dolist (event (sort (copy-sequence events)
                          (lambda (a b)
                            (< (or (alist-get 'origin_server_ts a) 0)

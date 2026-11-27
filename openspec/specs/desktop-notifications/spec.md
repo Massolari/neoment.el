@@ -54,3 +54,14 @@ The handler SHALL be customisable.
 #### Scenario: Quotes in message on macOS
 - **WHEN** a message body contains `"; do shell script "x`
 - **THEN** the text is shown literally and nothing is executed
+
+### Requirement: Redacted messages are not notification text
+A message marked `was_redacted` (redacted live or already redacted on the server) SHALL NOT be used as the push-rule notification candidate or as the stored-message fallback. A candidate that is redacted before the notification is sent SHALL be skipped in favour of the sync's next newest incoming message, then the fallback. This SHALL hold for rooms that are not open, which store only their last message.
+
+#### Scenario: Newer message already redacted
+- **WHEN** one sync brings Bob's message `hi` and then a later server-redacted message, and the notification count rises
+- **THEN** the desktop notification shows `hi`
+
+#### Scenario: Candidate redacted in the same sync
+- **WHEN** one sync brings Bob's message `hi`, then `spam`, then a redaction of `spam`, and the notification count rises
+- **THEN** the desktop notification shows `hi`, not `[Redacted…]`, whether or not the room is open

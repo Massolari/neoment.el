@@ -21,6 +21,7 @@ Message actions SHALL act on the message that owns the current line. When there 
 - `R` go to replied message, `m` set read marker, `V` show event
 - `P` load previous, `L` leave
 - `o`/`s` open/save attachment, `u`/`U` upload/upload clipboard, `z` zoom
+- `O` audio player menu
 - `i` info, `N` notification settings
 - `f`/`F` pickers, `l` toggle the room list
 - `q` quit, `g` revert
@@ -30,6 +31,10 @@ Each key SHALL call a named interactive command.
 #### Scenario: Remap
 - **WHEN** the user binds another key to `neoment-room-reply` in `neoment-room-mode-map`
 - **THEN** that key starts a reply
+
+#### Scenario: Player menu key
+- **WHEN** the user presses `O` in a room buffer
+- **THEN** the audio player menu opens
 
 ### Requirement: Message navigation
 `n`/`p` SHALL move to the header line of the next/previous message, skipping the current message's other lines and state messages. With no more messages: `No more messages in this direction`.
@@ -60,11 +65,19 @@ Each key SHALL call a named interactive command.
 - **THEN** `You can only edit your own messages` is shown
 
 ### Requirement: Threads
-`t` on a thread root or thread reply SHALL open or focus the thread buffer `neoment://thread/<root_id>/sender/<author name>` in a window to the right. The buffer starts as `Loading thread...`. On a message outside a thread, `t` SHALL open compose to start a thread on it.
+`t` on a thread root or thread reply SHALL open or focus the thread buffer `*neoment-thread: <author name> in <room name>*` in a window to the right. The name SHALL NOT contain the root event ID. When the thread root is not loaded, the author name SHALL be `unknown author`. The buffer starts as `Loading thread...`. On a message outside a thread, `t` SHALL open compose to start a thread on it.
 
 #### Scenario: Start thread
 - **WHEN** the user presses `t` on a message with no thread
 - **THEN** compose opens titled `Sending to thread in <room>`
+
+#### Scenario: Open thread buffer
+- **WHEN** the user presses `t` on a thread root sent by Alice in room `dev`
+- **THEN** the buffer `*neoment-thread: Alice in dev*` opens in a window to the right
+
+#### Scenario: Thread root not loaded
+- **WHEN** the user presses `t` on a thread reply in room `dev` whose root event is not loaded
+- **THEN** the thread buffer is named `*neoment-thread: unknown author in dev*`
 
 ### Requirement: Go to replied message
 `R` SHALL jump to the replied message (matched by id or `edit_data.id`) after pushing the mark, and show `Found replied message`. On a message that is not a reply it shows `This message is not replying to another message`.

@@ -15,16 +15,20 @@ The compose buffer SHALL be temporary and open in a fixed window 10 lines high b
 
 ### Requirement: Compose buffer naming
 The buffer name SHALL be one of:
-- `neoment://compose/Sending to <room>`
-- `neoment://compose/Sending to thread in <room>`
-- `neoment://compose/Replying to <sender>`
-- `neoment://compose/Editing message on <room>`
+- `*neoment-compose: Sending to <room>*`
+- `*neoment-compose: Sending to thread in <room>*`
+- `*neoment-compose: Replying to <sender>*`
+- `*neoment-compose: Editing message on <room>*`
 
-Each gets the suffix ` with the attachment <filename>` when an attachment is attached.
+Each gets the suffix ` with the attachment <filename>` inside the closing `*` when an attachment is attached.
 
 #### Scenario: Reply with attachment
 - **WHEN** the user uploads `a.png` while replying to Alice
-- **THEN** the buffer is named `neoment://compose/Replying to Alice with the attachment a.png`
+- **THEN** the buffer is named `*neoment-compose: Replying to Alice with the attachment a.png*`
+
+#### Scenario: Plain message
+- **WHEN** the user starts a new message in room `dev`
+- **THEN** the buffer is named `*neoment-compose: Sending to dev*`
 
 ### Requirement: Initial content
 Edit mode SHALL prefill the message `content` (non-empty lines) with point at the end. Other modes start empty and focused. The buffer SHALL have markdown highlighting.

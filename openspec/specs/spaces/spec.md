@@ -7,11 +7,15 @@ Lets the user browse a Matrix space's full hierarchy, including rooms they have 
 ## Requirements
 
 ### Requirement: Space buffer
-Opening a space SHALL show the buffer `neoment://space/<id>/<name>` with initial content `Loading space...`. It SHALL then fetch `GET /_matrix/client/v1/rooms/<space>/hierarchy`. On failure it shows `Failed to fetch space hierarchy: <e>`.
+Opening a space SHALL show the buffer `*neoment-space: <name>*`, without the space ID, with initial content `Loading space...`. It SHALL then fetch `GET /_matrix/client/v1/rooms/<space>/hierarchy`. On failure it shows `Failed to fetch space hierarchy: <e>`.
 
 #### Scenario: Hierarchy fails
 - **WHEN** the hierarchy request returns 403
 - **THEN** `Failed to fetch space hierarchy: <e>` is shown
+
+#### Scenario: Space buffer name
+- **WHEN** the user opens space `!sp:s`, named `Neovim Brasil`
+- **THEN** the buffer is named `*neoment-space: Neovim Brasil*`
 
 ### Requirement: Space layout
 The buffer SHALL show, in order: the space name (title face), an empty line, `Topic:` (bold), then the non-empty topic lines or `No topic`, an empty line, `Rooms:` (bold), then the tree. Each tree line is `<indent><icon>  <name> (<n> members)`, followed by ` - <first topic line...>` in the comment face when there is a topic. The root space comes first. Joined rooms carry an inline `Joined` bubble.

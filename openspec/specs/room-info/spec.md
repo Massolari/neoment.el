@@ -7,11 +7,15 @@ Shows a room's details (type, topic, space, status flags, links, members and ava
 ## Requirements
 
 ### Requirement: Room info buffer
-The buffer SHALL be named `neoment://room/info/<id>/<Space/Name>`. When opened from a room it shows in a window to the right, 50 columns wide.
+The buffer SHALL be named `*neoment-room-info: <Space/Name>*`, without the room ID. When opened from a room it shows in a window to the right, 50 columns wide.
 
 #### Scenario: Open from room
 - **WHEN** the user presses `i` in a room buffer
 - **THEN** the info buffer appears in a 50-column window to the right
+
+#### Scenario: Info buffer name
+- **WHEN** the user opens the information of room `!r:s`, displayed as `dev`
+- **THEN** the buffer is named `*neoment-room-info: dev*`
 
 ### Requirement: Room info layout
 The buffer SHALL show, in this order: a `─`-framed centred title; the avatar (16×8, GUI) or `No image`, with an open hint; `Room Type: Room|Space|Direct Message`; `Topic:` (if any); `Space: <name>` (if any); `Status:` toggles; `── Links ──` with `Room ID:` and `Aliases:`; and the members header.

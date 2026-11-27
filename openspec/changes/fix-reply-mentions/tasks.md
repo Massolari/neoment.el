@@ -8,8 +8,11 @@
 ## 2. Mention the replied-to sender on outgoing replies
 
 - [x] 2.1 Add a `:reply-sender` keyword to `neoment-compose-message-content` and `neoment-compose-send` (`neoment-compose.el`). Merge it after body mentions without duplicates, skip it when nil or equal to `(neoment-user-id)`, and emit `m.mentions` when the merged list is non-empty. Update both docstrings. Verify `make compile` passes.
-- [x] 2.2 In `neoment-compose-send-and-close`, pass `:reply-sender (neoment-message-sender message)` only when the relation type is `reply`. Verify by reading the call site, and with test 2.3.
+- [x] 2.2 In `neoment-compose-send-and-close`, pass `:reply-sender (neoment-message-sender message)` when the relation type is `reply` (see 2.5 for edits). Verify by reading the call site, and with test 2.3.
 - [x] 2.3 Add ERT tests in `test/neoment-compose-test.el` for the five `message-compose` scenarios (sender only, merged with body mention, already mentioned, own message → no `m.mentions`, thread without reply → no `m.mentions`). Make sure the existing reply/thread/edit tests still pass. Verify with `make test`.
+
+- [x] 2.4 Omit `is_falling_back` from the thread relation when `reply-to` is set. Update the "Thread with reply" assertion and add `neoment-compose-thread-reply-mentions-sender`.
+- [x] 2.5 In `neoment-compose-send-and-close`, pass the replied message's sender for a `replace` when it is loaded and not a placeholder, so it appears only in `m.new_content.m.mentions`. Add `neoment-compose-edit-reply-keeps-sender-mention` and `neoment-compose-edit-no-reply-no-mentions`.
 
 ## 3. Integration check
 

@@ -80,8 +80,8 @@ REPLY-TO is the event id replied to and REPLY-SENDER the user id of its
 sender, THREAD-ROOT-ID the thread, REPLACE the event id being edited
 and ATTACHMENT a plist.
 `m.mentions' lists the body mentions, then REPLY-SENDER unless it is
-already listed or is the current user.  With REPLACE it goes only in
-`m.new_content'.  A thread message is marked `is_falling_back' only
+already listed or is the current user.  With REPLACE, `m.mentions'
+goes only in `m.new_content'.  A thread message is marked `is_falling_back' only
 when it is not a real reply."
   (let* ((html (neoment-compose--html-with-mentions body))
          (mentions (cdr html))

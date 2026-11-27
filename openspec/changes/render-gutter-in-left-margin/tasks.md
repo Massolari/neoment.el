@@ -15,6 +15,8 @@
 - [x] 2.6 Change the initial `Loading...` (in `neoment-room--setup-buffer`) and `Loading thread...` texts to have no gutter prefix. Verify by updating the `Loading...` assertion in `test/neoment-room-test.el` and the `Loading thread...` assertion in `test/neoment-actions-test.el` to the bare strings, and checking they pass.
 - [x] 2.7 Update the remaining tests that quote a rendered header (sender-width cases, hidden-markup `line-of` checks, the separator-face check on ` │ hi`, the reply-placeholder line) to use the displayed-line helper, or to assert on the margin string and the text separately. Verify that `make test` passes for `test/neoment-room-test.el`.
 - [x] 2.8 Copy check: verify with a test that `filter-buffer-substring` over a rendered header line `hi` returns `hi`, and over a multi-line message returns only its content lines.
+- [ ] 2.9 Add the `neoment-room-bar` face (default `:inherit neoment-separator :inverse-video t`) in `neoment-faces.el`. In `neoment-room-mode`, set `left-fringe-width` buffer-locally to 2 and remap `fringe` to `neoment-room-bar` with `face-remap-add-relative`. Verify with a test that the buffer has `left-fringe-width` 2 and a `fringe` entry in `face-remapping-alist`, and that a window showing it reports `(car (window-fringes))` = 2 in a GUI frame.
+- [ ] 2.10 Spike in a GUI frame: show a room buffer with a soft-wrapped line and an inline image, and check that the remapped fringe draws in the separator colour and is continuous beside the wrapped rows and the image row. Record the findings in this task's notes. If `:inverse-video` is not honoured, switch to remapping `fringe` to a `:background` taken from `neoment-separator`'s foreground, and update design.md's "Bar in the left fringe" decision.
 
 ## 3. Inline images (`neoment-media.el`)
 
@@ -27,9 +29,9 @@
 
 ## 5. Integration
 
-- [x] 5.1 Run `make compile` (byte-compile with warnings as errors), `make lint` and `make test`. Verify all three succeed with no warnings about the removed `neoment-room-header-width`, `neoment-room--gutter` or `neoment-room--wrap-prefix`.
-- [ ] 5.2 Manually open a busy room in a GUI frame and in `emacs -nw`. Check that time and name are in the margin, long messages wrap to column 0, images start at column 0, `n`/`p` land on message starts, `M-w` on a line copies only its content, and a re-render (`g`) keeps the cursor on the same message. Record the result in the PR description.
-- [x] 5.3 Run `openspec validate render-gutter-in-left-margin --strict` and verify it passes.
+- [ ] 5.1 Run `make compile` (byte-compile with warnings as errors), `make lint` and `make test`. Verify all three succeed with no warnings about the removed `neoment-room-header-width`, `neoment-room--gutter` or `neoment-room--wrap-prefix`.
+- [ ] 5.2 Manually open a busy room in a GUI frame and in `emacs -nw`. Check that time and name are in the margin, the fringe bar is continuous beside wrapped lines and images in the GUI frame and absent in `-nw`, long messages wrap to column 0, images start at column 0, `n`/`p` land on message starts, `M-w` on a line copies only its content, and a re-render (`g`) keeps the cursor on the same message. Record the result in the PR description.
+- [ ] 5.3 Run `openspec validate render-gutter-in-left-margin --strict` and verify it passes.
 
 ## Workflow follow-up
 

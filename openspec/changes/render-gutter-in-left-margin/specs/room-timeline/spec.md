@@ -136,3 +136,16 @@ When `neoment-room-hide-markup` is non-nil (the default), these SHALL be invisib
 #### Scenario: Code fence display
 - **WHEN** a code block opens with ```` ```elisp ```` with the default settings
 - **THEN** the opening fence line shows only `elisp` and the closing fence line shows no text
+
+## ADDED Requirements
+
+### Requirement: Fringe bar
+In graphical frames, the left fringe of room and thread windows SHALL be 2 pixels wide and drawn in the `neoment-room-bar` face, forming a bar between the margin and the text area. In terminal frames there is no bar.
+
+#### Scenario: Bar beside a wrapped line and an image
+- **WHEN** a room buffer with a soft-wrapped line and an inline image is shown in a GUI window
+- **THEN** the fringe bar is drawn on every screen row, including the wrapped part of the line and the full height of the image row
+
+#### Scenario: Terminal frame
+- **WHEN** a room buffer is shown in `emacs -nw`
+- **THEN** no bar is shown and the text area starts right after the margin

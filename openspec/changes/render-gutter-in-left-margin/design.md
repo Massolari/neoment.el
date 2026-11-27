@@ -43,7 +43,18 @@ The anchor is still real text, so `neoment-room--filter-substring` drops it from
 
 - *Alternative: `set-window-margins` from `window-configuration-change-hook`.* This is only needed when the width changes at runtime, and here it is constant. Rejected as extra code.
 
-29 = 8 (time) + 1 + 19 (name) + 1. The left fringe sits between the margin and the text area by default (`fringes-outside-margins` nil), which adds visual space, so no wider gap is needed.
+29 = 8 (time) + 1 + 19 (name) + 1. The left fringe sits between the margin and the text area by default (`fringes-outside-margins` nil) and carries the bar (next decision). The margin string's trailing space is the gap on the bar's left.
+
+### Bar in the left fringe
+
+The `│` between sender and content becomes a bar drawn by the left fringe. `neoment-room-mode` sets `left-fringe-width` buffer-locally to 2 (pixels) and remaps the `fringe` face buffer-locally to a new face `neoment-room-bar` with `face-remap-add-relative`. Like the margin width, Emacs applies the fringe width when the buffer is shown in a window. The right fringe is not changed.
+
+The fringe background fills every screen row whatever its height, so the bar is continuous beside soft-wrapped rows and tall inline-image rows. It is not text: copying, character offsets, image column and image width are unaffected, and the renderer needs no per-line code. Terminal frames have no fringe, so they show no bar; that is accepted.
+
+`neoment-room-bar` defaults to `:inherit neoment-separator :inverse-video t`, so the fringe background takes the separator colour and themes can restyle it. Whether the fringe honours `:inverse-video` is unverified; if it does not, the mode instead remaps `fringe` to `:background` set from `neoment-separator`'s foreground when the mode starts (a task checks this).
+
+- *Alternative: a buffer-local `line-prefix`/`wrap-prefix` of `│ `.* Works in terminals too, but on an image row the one-character `│` sits at the text baseline, so the bar shows only a short segment beside each image. It also takes 2 columns from the text area. Rejected.
+- *Alternative: the `│` inside the margin string.* Only header lines would have it; continuation and wrapped rows would leave gaps. Rejected.
 
 ### Faces of the margin string
 
@@ -68,6 +79,10 @@ Rendered strings no longer contain the time and name, so tests get a helper that
 - [`isearch` for a sender name or a time no longer matches] → Accepted in the proposal. Message actions find messages through text properties, not through visible text.
 - [`hl-line` highlights the text area only, so the margin of the current line is not highlighted] → Accepted as a small visual change.
 - [Thread windows are opened 50 columns wide; with a 29-column margin the text area is 21 columns] → Same usable width as today (50 - 31 = 19, now 21), so no change.
+- [Terminal frames have no fringe, so they show no bar] → Accepted.
+- [The fringe bar runs the full window height, below the last message too] → Accepted.
+- [A 2-pixel fringe cannot show fringe indicators] → `visual-line-mode` already turns off continuation arrows, and room buffers use no other indicators. Accepted.
+- [Another mode that sets `left-fringe-width` or remaps `fringe` conflicts with the bar] → Accepted, as for the margin.
 - [Tests that match `.*Bob │` against buffer text break] → Rewritten in the test tasks to use the displayed-line helper.
 
 ## Migration Plan

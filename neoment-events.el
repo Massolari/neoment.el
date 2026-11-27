@@ -180,17 +180,24 @@ When it is not known yet, return a placeholder and fetch the event."
               :height (alist-get 'h thumb) :width (alist-get 'w thumb)
               :mimetype (alist-get 'mimetype thumb))))))
 
+(defun neoment-events--geo-url (geo)
+  "Return the map URL for the `geo:lat,lon' URI GEO, or nil.
+Only the leading `geo:lat,lon' is read, so altitude and parameters are
+ignored; anything else, including a non-string GEO, gives nil."
+  (and (stringp geo)
+       (string-match
+        "\\`geo:\\(-?[0-9]+\\(?:\\.[0-9]+\\)?\\),\\(-?[0-9]+\\(?:\\.[0-9]+\\)?\\)\\(?:[,;]\\|\\'\\)"
+        geo)
+       (format "https://maps.google.com/?q=%s,%s"
+               (match-string 1 geo) (match-string 2 geo))))
+
 (defun neoment-events--attachment (content type)
   "Return the attachment plist of TYPE for the message CONTENT."
   (let ((info (alist-get 'info content)))
     (if (eq type 'location)
-        (let* ((geo (alist-get 'geo_uri content))
-               (url (and (stringp geo)
-                         (string-match "geo:\\([-0-9.]+\\),\\([-0-9.]+\\)" geo)
-                         (format "https://maps.google.com/?q=%s,%s"
-                                 (match-string 1 geo) (match-string 2 geo)))))
-          (list :type 'location :url url
-                :thumbnail (neoment-events--thumbnail content)))
+        (list :type 'location
+              :url (neoment-events--geo-url (alist-get 'geo_uri content))
+              :thumbnail (neoment-events--thumbnail content))
       (let* ((mxc (alist-get 'url content))
              (url (neoment-events-mxc-to-url mxc))
              (attachment (list :type type
@@ -212,11 +219,12 @@ When it is not known yet, return a placeholder and fetch the event."
 
 (defun neoment-events--content-attachment (content type)
   "Return the attachment of TYPE described by CONTENT, or nil.
-A location needs a `geo_uri'; every other TYPE needs an mxc `url', so an
-edit cannot replace a working attachment with an unusable one."
+A location needs a `geo_uri' of the form `geo:lat,lon'; every other TYPE
+needs an mxc `url', so an edit cannot replace a working attachment with an
+unusable one."
   (when (and type
              (if (eq type 'location)
-                 (alist-get 'geo_uri content)
+                 (neoment-events--geo-url (alist-get 'geo_uri content))
                (neoment-events-mxc-p (alist-get 'url content))))
     (neoment-events--attachment content type)))
 

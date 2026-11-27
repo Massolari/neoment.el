@@ -669,9 +669,17 @@
                                              (thumbnail_info . ((w . 1) (h . 2) (mimetype . "image/jpeg")))))))))
         (should (equal (plist-get (plist-get video :thumbnail) :url)
                        "https://hs.example/_matrix/client/v1/media/download/s/t")))
-      (let ((loc (att "m.location" '((url . "mxc://s/l") (geo_uri . "geo:-23.5,46.6")))))
+      (let ((loc (att "m.location" '((geo_uri . "geo:-23.5,46.6")))))
         (should (eq (plist-get loc :type) 'location))
         (should (equal (plist-get loc :url) "https://maps.google.com/?q=-23.5,46.6")))
+      ;; Altitude and parameters after lat,lon are ignored.
+      (should (equal (plist-get (att "m.location" '((geo_uri . "geo:1.5,-2,30;u=10")))
+                                :url)
+                     "https://maps.google.com/?q=1.5,-2"))
+      ;; A location depends on a geo:lat,lon geo_uri, never on url.
+      (should-not (att "m.location" '((url . "mxc://s/l"))))
+      (dolist (geo '(5 "" "foo" "geo:" "geo:-,-" "geo:1.,2" "xgeo:1,2" "geo:1,2x"))
+        (should-not (att "m.location" `((geo_uri . ,geo)))))
       (let ((sticker (att nil '((url . "mxc://s/st")) "m.sticker")))
         (should (eq (plist-get sticker :type) 'image)))
       (should-not (att "m.image" nil))
@@ -829,7 +837,16 @@
                  "$le" "$t" "m.location" '((geo_uri . "geo:1.5,2.5")) 4)))
     (let ((att (neoment-message-attachment (neoment-room-get-message room "$t"))))
       (should (eq (plist-get att :type) 'location))
-      (should (equal (plist-get att :url) "https://maps.google.com/?q=1.5,2.5")))))
+      (should (equal (plist-get att :url) "https://maps.google.com/?q=1.5,2.5")))
+    ;; Edits with an unusable geo_uri are applied but keep the working location.
+    (pcase-dolist (`(,id ,geo ,ts) '(("$le2" 5 5) ("$le3" "" 6) ("$le4" "foo" 7)))
+      (neoment-events-handle-multiple
+       room (list (neoment-events-test-attachment-edit
+                   id "$t" "m.location" `((geo_uri . ,geo)) ts)))
+      (let ((m (neoment-room-get-message room "$t")))
+        (should (equal (plist-get (neoment-message-edit-data m) :timestamp) ts))
+        (should (equal (plist-get (neoment-message-attachment m) :url)
+                       "https://maps.google.com/?q=1.5,2.5"))))))
 
 (ert-deftest neoment-events-edit-replaces-attachment ()
   (neoment-events-test

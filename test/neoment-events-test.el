@@ -744,6 +744,33 @@
      room (list (neoment-events-test-thread-root "$r" 2 1)) t)
     (should (= (neoment-events-test-thread-count room "$r") 2))))
 
+(ert-deftest neoment-events-thread-history-root-then-live-reply ()
+  (neoment-events-test
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-thread-root "$r" 2 1)
+                (neoment-events-test-thread-reply "$t1" "$r" 2))
+     t)
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-thread-reply "$t2" "$r" 3)))
+    (should (= (neoment-events-test-thread-count room "$r") 3))))
+
+(ert-deftest neoment-events-thread-root-without-server-count ()
+  ;; A server that omits the thread aggregation: replies are counted locally.
+  (neoment-events-test
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-text "root" :id "$r" :ts 1)
+                (neoment-events-test-thread-reply "$t1" "$r" 2)
+                (neoment-events-test-thread-reply "$t2" "$r" 3)))
+    (should (= (neoment-events-test-thread-count room "$r") 2)))
+  (neoment-events-test
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-text "root" :id "$r" :ts 1)
+                (neoment-events-test-thread-reply "$t1" "$r" 2))
+     t)
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-thread-reply "$t2" "$r" 3)) t)
+    (should (= (neoment-events-test-thread-count room "$r") 2))))
+
 ;;;; 3.4 Edits, redactions and reactions
 
 (defun neoment-events-test-edit (id target body ts &optional sender)

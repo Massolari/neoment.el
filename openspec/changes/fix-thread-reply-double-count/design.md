@@ -24,12 +24,11 @@ The server's aggregation is a snapshot taken when the server sent the root. Any 
 
 ## Decisions
 
-### Increment only for live replies whose root was loaded in an earlier batch
+### Skip the increment when the root came with a server count in the same batch
 
-`neoment-events-handle-multiple` binds a dynamic variable (e.g. `neoment-events--batch-ids`, a hash set). It is bound only by the outermost call, so recursive calls for pending events share it. `neoment-events--handle-message` adds each message id it stores to that set. The increment then runs only when:
+`neoment-events-handle-multiple` binds a dynamic variable (`neoment-events--batch-ids`, a hash set). It is bound only by the outermost call, so recursive calls for pending events share it. `neoment-events--handle-message` adds to that set the id of each message it stores that carries a server thread count. The increment then runs only when the root id is not in the current batch set.
 
-- `is-history` is nil, and
-- the root id is not in the current batch set.
+A root without a server count (a homeserver that omits the aggregation) never enters the set, so its replies are counted locally as before. Otherwise its count would stay nil, the bubble would not render, and its replies, hidden from the main timeline, would be unreachable.
 
 When no batch is bound, as with a direct `neoment-events-handle` call such as the nested `unsigned.m.replace` case, the root necessarily came from an earlier batch, so the increment applies.
 
@@ -41,9 +40,9 @@ Alternatives considered:
 
 ### History never increments
 
-A history page is one `/messages` response. Its roots carry an aggregation that covers every reply in the page and in newer pages. Replies loaded from newer pages earlier were added while the root was absent, so they never incremented either. This falls out of the `is-history` check, with no extra state.
+A history page is one `/messages` response. Its roots carry an aggregation that covers every reply in the page and in newer pages. Replies loaded from newer pages earlier were added while the root was absent, so they never incremented either. This falls out of the batch check: paginating backwards, a reply's root is either in the same page (skipped) or in an older page not loaded yet (no root, no increment). History is topologically older than anything loaded live, so a history reply never finds a root loaded in an earlier batch. No `is-history` check is needed, and dropping it keeps local counting for roots without a server count.
 
 ## Risks / Trade-offs
 
-- [A sync response is handled while a history page that contains the root is in flight. The page's snapshot can then include a reply that the sync already delivered or will deliver.] → The reply is handled once (event-id dedup). If it came first, the root was absent and nothing was incremented. If it comes after the page, it is in `neoment-room-events` and skipped. Only a reply sent between the two server snapshots and delivered by sync after the page could be off by one. This is rare, and the next load of the root resets the count.
+- [A sync response is handled while a history page that contains the root is in flight. The page's snapshot can then include a reply that the sync already delivered or will deliver.] → The reply is handled once (event-id dedup). If sync delivered it before the page landed, the root was absent and nothing was incremented. A page fetched backwards from an earlier token holds only events before that token, so a reply sent after it is never in the page; when sync delivers such a reply after the page has landed, it increments a count whose snapshot may already include it. That reply, sent between the two server snapshots, can make the count off by one. This is rare, and the next load of the root resets the count.
 - [Untracked rooms do not keep raw events, so redelivery is not deduplicated there.] → Untracked rooms keep only their last message, and the room bubble is shown only in tracked room buffers. Behavior there is unchanged from today.

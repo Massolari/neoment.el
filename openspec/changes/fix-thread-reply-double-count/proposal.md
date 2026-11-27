@@ -6,10 +6,9 @@ Thread roots show more replies than they have (issue #14). A root's `thread-repl
 
 ## What Changes
 
-- A thread reply adds 1 to its loaded root's count only when the root's server count cannot include it:
-  - the reply arrives live (sync), not in paginated history, **and**
-  - the root was loaded in an earlier batch, not in the batch that delivered the reply.
-- Replies in paginated history never change a root's count. The root's server count is the source of truth there.
+- A thread reply adds 1 to its loaded root's count only when the root's server count cannot include it: the root was not stored, with a server count, in the batch that delivered the reply.
+- Replies in paginated history therefore never change a root's server count: the root is in the same page or not loaded yet.
+- A root without a server count (a homeserver that omits the aggregation) keeps counting its loaded replies locally.
 - The `Threads` requirement and its "count 2 + new reply → 3" scenario are made explicit about this: the scenario covers only a live reply to a root loaded earlier. New scenarios cover a root and its replies in the same batch, and in a history page.
 
 ## Capabilities
@@ -20,7 +19,7 @@ _None._
 
 ### Modified Capabilities
 
-- `matrix-events`: the `Threads` requirement now says when a reply increments its root's count (live, with the root loaded in an earlier batch) and when it does not (same batch as the root, or history).
+- `matrix-events`: the `Threads` requirement now says when a reply increments its root's count (root loaded in an earlier batch, or without a server count) and when it does not (same batch as a root with a server count).
 
 ## Impact
 

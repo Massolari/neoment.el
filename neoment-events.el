@@ -371,19 +371,22 @@ display name never replaces a current one."
 Other users' thread replies then count as unread activity.")
 
 (defvar neoment-events--batch-ids nil
-  "Hash set of the ids of messages stored in the current batch, or nil.
-`neoment-events-handle-multiple' binds it.  A thread root's server
-count already includes the replies delivered in the same batch.")
+  "Hash set of ids of thread roots with a server count, or nil.
+It holds the messages stored in the current batch that carry
+`unsigned.m.relations.m.thread.count'.  `neoment-events-handle-multiple'
+binds it.  Such a count already includes the replies delivered in the
+same batch.")
 
 (defun neoment-events--handle-message (room event is-history)
   "Handle the message EVENT of ROOM.
 IS-HISTORY is non-nil for paginated history.  Return non-nil when the
 room changed.
 
-A thread reply adds one to its loaded root's replies count only when
-it arrives live and the root was loaded in an earlier batch: the root's
-server count already includes the replies that existed when the server
-sent it."
+A thread reply adds one to its loaded root's replies count unless the
+root was stored in the same batch with a server count: that count
+already includes the replies that existed when the server sent the
+root.  A history reply's root is always in its own page or not loaded
+yet, so history never increments a server count."
   (let* ((content (alist-get 'content event))
          (relates (alist-get 'm.relates_to content))
          (event-ts (or (alist-get 'origin_server_ts event) 0)))
@@ -434,12 +437,12 @@ sent it."
           (setf (neoment-message-replying-to message)
                 (neoment-events--reply-to room in-reply-to message)))
         (neoment-room-add-message room message)
-        (when neoment-events--batch-ids
+        (when (and neoment-events--batch-ids
+                   (neoment-message-thread-replies-count message))
           (puthash (neoment-message-id message) t neoment-events--batch-ids))
         (unless is-history
           (neoment-notify-add-candidate room message))
-        (when-let* (((not is-history))
-                    (root-id (neoment-message-thread-root-id message))
+        (when-let* ((root-id (neoment-message-thread-root-id message))
                     ((not (and neoment-events--batch-ids
                                (gethash root-id neoment-events--batch-ids))))
                     (root (neoment-room-get-message room root-id)))

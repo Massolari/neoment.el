@@ -9,6 +9,7 @@
 
 (require 'test-helper)
 (require 'neoment-auth)
+(require 'neoment-events)
 
 (defmacro neoment-auth-test-env (&rest body)
   "Run BODY in a temp dir with messages captured and UI side effects stubbed.
@@ -98,6 +99,30 @@
     (should (equal (neoment-client-homeserver neoment--client) "https://new.example"))
     (should (null (neoment-client-access-token neoment--client)))
     (should (null (neoment-rooms)))))
+
+(ert-deftest neoment-auth-client-reset-runs-hook ()
+  (let* ((neoment--client nil)
+         (seen nil)
+         (neoment-client-reset-hook
+          (list (lambda () (push neoment--client seen)))))
+    (neoment-test-new-client)
+    (let ((new (neoment-client-reset "https://new.example")))
+      (should (= (length seen) 1))
+      (should (eq (car seen) new))
+      (should (eq (car seen) neoment--client))
+      (should (equal (neoment-client-homeserver (car seen)) "https://new.example")))))
+
+(ert-deftest neoment-auth-session-expiry-clears-replies ()
+  (neoment-auth-test-env
+    (neoment-test-new-client)
+    (neoment-storage-save-session)
+    (neoment-events-reset-caches)
+    (puthash "!r:s $orig" (list :message (neoment-message--create :id "$orig"))
+             neoment-events--reply-cache)
+    (neoment-auth-session-expired)
+    (should-not (neoment-logged-in-p))
+    (should (neoment-test-message-p "Session expired, please log in again"))
+    (should (zerop (hash-table-count neoment-events--reply-cache)))))
 
 ;;;; 2.3 Login methods
 

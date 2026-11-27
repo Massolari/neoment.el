@@ -72,8 +72,9 @@
                     (neoment-api-encode user-id))
        :callback
        (lambda (result)
-         (remhash user-id neoment-events--profile-requests)
+         ;; After a reset the marker belongs to the new client.
          (when (eq client neoment--client)
+           (remhash user-id neoment-events--profile-requests)
            (let ((name (neoment-json-get (plist-get result :ok) 'displayname)))
              ;; Remember failures too, so the name is not fetched again.
              (unless (neoment-has-display-name user-id)
@@ -84,6 +85,8 @@
 
 (setq neoment-client-fetch-display-name-function
       #'neoment-events-fetch-display-name)
+
+(add-hook 'neoment-client-reset-hook #'neoment-events-reset-caches)
 
 (defun neoment-events--same-sender-p (a b)
   "Return non-nil when sender A is a string equal to sender B."

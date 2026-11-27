@@ -754,6 +754,31 @@
      room (list (neoment-events-test-thread-reply "$t2" "$r" 3)))
     (should (= (neoment-events-test-thread-count room "$r") 3))))
 
+(ert-deftest neoment-events-thread-root-with-zero-server-count ()
+  ;; A server count of 0 is treated as no count: replies count locally.
+  (neoment-events-test
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-thread-root "$r" 0 1)
+                (neoment-events-test-thread-reply "$t1" "$r" 2)
+                (neoment-events-test-thread-reply "$t2" "$r" 3)))
+    (should (= (neoment-events-test-thread-count room "$r") 2))))
+
+(ert-deftest neoment-events-thread-edited-root-not-double-counted ()
+  ;; A bundled edit changes the root's id; the batch set still matches.
+  (neoment-events-test
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-text
+                 "root" :id "$r" :ts 1
+                 :unsigned `((m.relations
+                              . ((m.thread . ((count . 2)))
+                                 (m.replace . ,(neoment-events-test-edit
+                                                "$re" "$r" "root!" 5))))))
+                (neoment-events-test-thread-reply "$t1" "$r" 2)
+                (neoment-events-test-thread-reply "$t2" "$r" 3)))
+    (should (equal (neoment-message-content (neoment-room-get-message room "$r"))
+                   "root!"))
+    (should (= (neoment-events-test-thread-count room "$r") 2))))
+
 (ert-deftest neoment-events-thread-root-without-server-count ()
   ;; A server that omits the thread aggregation: replies are counted locally.
   (neoment-events-test

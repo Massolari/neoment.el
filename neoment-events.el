@@ -440,9 +440,8 @@ yet, so history never increments a server count."
         (when-let* ((neoment-events--batch-ids)
                     (count (neoment-events--get event 'unsigned 'm.relations
                                                 'm.thread 'count))
-                    ((natnump count))
-                    ((> count 0)))
-          (puthash (neoment-message-id message) t neoment-events--batch-ids))
+                    ((and (integerp count) (> count 0))))
+          (puthash (alist-get 'event_id event) t neoment-events--batch-ids))
         (unless is-history
           (neoment-notify-add-candidate room message))
         (when-let* ((root-id (neoment-message-thread-root-id message))

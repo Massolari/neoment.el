@@ -372,7 +372,7 @@ Other users' thread replies then count as unread activity.")
 
 (defvar neoment-events--batch-ids nil
   "Hash set of ids of thread roots with a server count, or nil.
-It holds the messages stored in the current batch that carry
+It holds the messages stored in the current batch that carry a positive
 `unsigned.m.relations.m.thread.count'.  `neoment-events-handle-multiple'
 binds it.  Such a count already includes the replies delivered in the
 same batch.")
@@ -437,8 +437,11 @@ yet, so history never increments a server count."
           (setf (neoment-message-replying-to message)
                 (neoment-events--reply-to room in-reply-to message)))
         (neoment-room-add-message room message)
-        (when (and neoment-events--batch-ids
-                   (neoment-message-thread-replies-count message))
+        (when-let* ((neoment-events--batch-ids)
+                    (count (neoment-events--get event 'unsigned 'm.relations
+                                                'm.thread 'count))
+                    ((natnump count))
+                    ((> count 0)))
           (puthash (neoment-message-id message) t neoment-events--batch-ids))
         (unless is-history
           (neoment-notify-add-candidate room message))

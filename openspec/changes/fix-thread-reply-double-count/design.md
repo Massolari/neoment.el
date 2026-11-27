@@ -26,11 +26,11 @@ The server's aggregation is a snapshot taken when the server sent the root. Any 
 
 ### Skip the increment when the root came with a server count in the same batch
 
-`neoment-events-handle-multiple` binds a dynamic variable (`neoment-events--batch-ids`, a hash set). It is bound only by the outermost call, so recursive calls for pending events share it. `neoment-events--handle-message` adds to that set the id of each message it stores that carries a server thread count. The increment then runs only when the root id is not in the current batch set.
+`neoment-events-handle-multiple` binds a dynamic variable (`neoment-events--batch-ids`, a hash set). It is bound only by the outermost call, so recursive calls for pending events share it. `neoment-events--handle-message` adds to that set the id of each message it stores that carries a positive server thread count (an aggregation without `count`, or with 0, is treated as no count). The increment then runs only when the root id is not in the current batch set.
 
 A root without a server count (a homeserver that omits the aggregation) never enters the set, so its replies are counted locally as before. Otherwise its count would stay nil, the bubble would not render, and its replies, hidden from the main timeline, would be unreachable.
 
-When no batch is bound, as with a direct `neoment-events-handle` call such as the nested `unsigned.m.replace` case, the root necessarily came from an earlier batch, so the increment applies.
+When no batch is bound (only direct `neoment-events-handle` calls, used by tests; the nested `unsigned.m.replace` call runs inside the outer batch and never increments), the root necessarily came from an earlier batch, so the increment applies.
 
 Alternatives considered:
 

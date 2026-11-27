@@ -762,13 +762,14 @@
                 (neoment-events-test-thread-reply "$t1" "$r" 2)
                 (neoment-events-test-thread-reply "$t2" "$r" 3)))
     (should (= (neoment-events-test-thread-count room "$r") 2)))
+  ;; An aggregation without a count does not block local counting.
   (neoment-events-test
     (neoment-events-handle-multiple
-     room (list (neoment-events-test-text "root" :id "$r" :ts 1)
-                (neoment-events-test-thread-reply "$t1" "$r" 2))
-     t)
-    (neoment-events-handle-multiple
-     room (list (neoment-events-test-thread-reply "$t2" "$r" 3)) t)
+     room (list (neoment-events-test-text
+                 "root" :id "$r" :ts 1
+                 :unsigned '((m.relations . ((m.thread . ((latest_event . nil)))))))
+                (neoment-events-test-thread-reply "$t1" "$r" 2)
+                (neoment-events-test-thread-reply "$t2" "$r" 3)))
     (should (= (neoment-events-test-thread-count room "$r") 2))))
 
 ;;;; 3.4 Edits, redactions and reactions

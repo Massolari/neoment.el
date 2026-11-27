@@ -103,6 +103,10 @@
 (defvar neoment-client-fetch-display-name-function nil
   "Function called with a user id to fetch its display name.")
 
+(defvar neoment-client-reset-hook nil
+  "Hook run by `neoment-client-reset' after the new client is installed.
+Modules that keep per-account state outside the client clear it here.")
+
 (defun neoment--defer (function &rest args)
   "Call FUNCTION with ARGS from the command loop, outside process callbacks."
   (apply #'run-at-time 0 nil function args))
@@ -112,13 +116,16 @@
   (truncate (* 1000 (float-time))))
 
 (defun neoment-client-reset (homeserver)
-  "Start a new client for HOMESERVER, keeping only the device id."
+  "Start a new client for HOMESERVER, keeping only the device id.
+Run `neoment-client-reset-hook' and return the new client."
   (let ((device-id (and neoment--client
                         (neoment-client-device-id neoment--client))))
     (setq neoment--client (neoment-client--create
                            :homeserver homeserver
                            :device-id (or device-id
-                                          neoment-default-device-id)))))
+                                          neoment-default-device-id))))
+  (run-hooks 'neoment-client-reset-hook)
+  neoment--client)
 
 (defun neoment-logged-in-p ()
   "Return non-nil when there is an active session."

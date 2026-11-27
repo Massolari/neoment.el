@@ -1456,6 +1456,88 @@
         (should (= requests 1))
         (should (member nil changed))))))
 
+;;;; Caches follow the client
+
+(defun neoment-events-test-switch-client ()
+  "Reset the client, log in as @other:s and track \"!r:s\" again.
+Return the room of the new client."
+  (neoment-client-reset "https://hs.example")
+  (setf (neoment-client-user-id neoment--client) "@other:s"
+        (neoment-client-access-token neoment--client) "TOKEN2")
+  (let ((room (neoment-get-room "!r:s")))
+    (neoment-room-set-tracked room t)
+    room))
+
+(defun neoment-events-test-handle-reply (room id)
+  "Handle in ROOM the message ID that replies to $orig and return it."
+  (neoment-events-handle
+   room (neoment-events-test-text
+         "answer" :id id :ts 10
+         :extra '((m.relates_to . ((m.in_reply_to . ((event_id . "$orig"))))))))
+  (neoment-room-get-message room id))
+
+(defmacro neoment-events-test-capture-api (&rest body)
+  "Run BODY recording `neoment-api-request' calls in `api-calls', newest first.
+Each entry is (PATH . CALLBACK); nothing is sent."
+  (declare (indent 0))
+  `(let ((api-calls nil))
+     (cl-letf (((symbol-function 'neoment-api-request)
+                (lambda (_method path &rest args)
+                  (push (cons path (plist-get args :callback)) api-calls))))
+       ,@body)))
+
+(defconst neoment-events-test-orig-url
+  "https://hs.example/_matrix/client/v3/rooms/%21r%3As/event/%24orig"
+  "URL of the fetch of the replied event $orig in !r:s.")
+
+(ert-deftest neoment-events-reply-preview-after-switching-accounts ()
+  (neoment-events-test
+    (let ((req (lambda ()
+                 (seq-find (lambda (r) (equal (plist-get r :url)
+                                              neoment-events-test-orig-url))
+                           (reverse neoment-test--requests)))))
+      (neoment-events-test-handle-reply room "$reply")
+      (funcall (plist-get (funcall req) :callback)
+               '(:ok ((type . "m.room.message") (event_id . "$orig") (sender . "@bob:s")
+                      (origin_server_ts . 5) (content . ((body . "secret"))))))
+      (should (gethash "!r:s $orig" neoment-events--reply-cache))
+      (let* ((room (neoment-events-test-switch-client))
+             (replied (neoment-message-replying-to
+                       (neoment-events-test-handle-reply room "$reply2"))))
+        (should (= (cl-count neoment-events-test-orig-url (neoment-test-request-urls)
+                             :test #'equal)
+                   2))
+        (should (neoment-message-placeholder replied))
+        (should-not (neoment-message-content replied))))))
+
+(ert-deftest neoment-events-late-reply-response-from-previous-client ()
+  (neoment-events-test
+    (neoment-events-test-capture-api
+      (neoment-events-test-handle-reply room "$reply")
+      (let ((old (cdr (seq-find (lambda (c) (string-search "/event/" (car c)))
+                                api-calls))))
+        (neoment-events-test-switch-client)
+        (should (zerop (hash-table-count neoment-events--reply-cache)))
+        (funcall old '(:ok ((type . "m.room.message") (event_id . "$orig")
+                            (sender . "@bob:s") (origin_server_ts . 5)
+                            (content . ((body . "secret"))))))
+        (should (zerop (hash-table-count neoment-events--reply-cache)))))))
+
+(ert-deftest neoment-events-late-display-name-response-keeps-new-fetch ()
+  (neoment-events-test
+    (neoment-events-test-capture-api
+      (neoment-events-fetch-display-name "@u:s")
+      (let ((old (cdar api-calls)))
+        (neoment-events-test-switch-client)
+        (neoment-events-fetch-display-name "@u:s")
+        (funcall old '(:ok ((displayname . "Old"))))
+        (should (gethash "@u:s" neoment-events--profile-requests))
+        (neoment-events-fetch-display-name "@u:s")
+        (should (= (cl-count-if (lambda (c) (string-search "/profile/" (car c)))
+                                api-calls)
+                   2))
+        (should-not (neoment-has-display-name "@u:s"))))))
+
 ;;;; 3.8 Tracking
 
 (ert-deftest neoment-events-room-tracking ()

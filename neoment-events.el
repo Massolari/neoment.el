@@ -358,15 +358,19 @@ display name never replaces a current one."
 ;;;; Pending events
 
 (defun neoment-events--add-pending (room target-id event)
-  "Keep EVENT of ROOM until the event TARGET-ID arrives."
-  (let ((id (alist-get 'event_id event))
-        (pending (neoment-room-pending-events room)))
-    (remhash id (neoment-room-events room))
-    (puthash target-id
-             (append (seq-remove (lambda (e) (equal (alist-get 'event_id e) id))
-                                 (gethash target-id pending))
-                     (list event))
-             pending)))
+  "Keep EVENT of ROOM until the event TARGET-ID arrives.
+An untracked room keeps no pending events: it does not keep the
+target, and loading history when the room is opened delivers EVENT
+again together with its target."
+  (when (neoment-room-is-tracked room)
+    (let ((id (alist-get 'event_id event))
+          (pending (neoment-room-pending-events room)))
+      (remhash id (neoment-room-events room))
+      (puthash target-id
+               (append (seq-remove (lambda (e) (equal (alist-get 'event_id e) id))
+                                   (gethash target-id pending))
+                       (list event))
+               pending))))
 
 ;;;; Handlers
 

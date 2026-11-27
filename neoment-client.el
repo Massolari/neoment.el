@@ -72,7 +72,7 @@
 (cl-defstruct (neoment-invited-room (:constructor neoment-invited-room--create)
                                     (:copier nil))
   "A room the user was invited to."
-  id name (topic "") members avatar-url)
+  id name alias (topic "") members avatar-url)
 
 (cl-defstruct (neoment-message (:constructor neoment-message--create)
                                (:copier copy-neoment-message))
@@ -360,16 +360,20 @@ An unknown name is fetched in the background."
     (cond
      ((null room) room-id)
      ((neoment-invited-room-p room)
-      (if (equal (neoment-invited-room-name room) room-id)
-          (let ((names (delq nil
-                             (mapcar (lambda (pair)
-                                       (unless (equal (car pair) user)
-                                         (cdr pair)))
-                                     (neoment-invited-room-members room)))))
-            (if names (neoment--display-name-from-members names) "Empty room"))
-        (neoment-invited-room-name room)))
+      (cond
+       ((not (equal (neoment-invited-room-name room) room-id))
+        (neoment-invited-room-name room))
+       ((neoment-invited-room-alias room))
+       (t
+        (let ((names (delq nil
+                           (mapcar (lambda (pair)
+                                     (unless (equal (car pair) user)
+                                       (cdr pair)))
+                                   (neoment-invited-room-members room)))))
+          (if names (neoment--display-name-from-members names) "Empty room")))))
      ((not (equal (neoment-room-name room) room-id))
       (neoment-room-name room))
+     ((car (neoment-room-aliases room)))
      ((and (neoment-room-summary room)
            (neoment--name-from-heroes (neoment-room-summary room))))
      (t

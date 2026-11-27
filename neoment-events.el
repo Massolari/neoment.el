@@ -612,7 +612,8 @@ The canonical alias comes first, followed by the alternative aliases."
 (defun neoment-events--handle-canonical-alias (room event &optional is-history)
   "Handle the `m.room.canonical_alias' EVENT of ROOM.
 IS-HISTORY is non-nil for paginated history.  The state message is then
-still added, but the aliases and the name of ROOM are left unchanged."
+still added, but the aliases of ROOM are left unchanged.  The explicit
+name of ROOM is never changed: the display name derives the alias."
   (let* ((content (alist-get 'content event))
          (aliases (neoment-events--aliases content))
          (sender (neoment-display-name (alist-get 'sender event))))
@@ -624,10 +625,6 @@ still added, but the aliases and the name of ROOM are left unchanged."
                      (format "%s set the room aliases to %s"
                              sender (string-join aliases ", "))
                    (format "%s removed the room aliases" sender))))
-    (when (and (not is-history)
-               aliases
-               (equal (neoment-room-name room) (neoment-room-id room)))
-      (setf (neoment-room-name room) (car aliases)))
     t))
 
 (defun neoment-events-handle (room event &optional is-history)
@@ -757,7 +754,7 @@ call's `neoment-events--batch-ids'."
        t)
       ("m.room.canonical_alias"
        (let ((alias (car (neoment-events--aliases content))))
-         (when alias (setf (neoment-invited-room-name room) alias)))
+         (setf (neoment-invited-room-alias room) alias))
        t)
       ("m.room.topic"
        (setf (neoment-invited-room-topic room) (or (alist-get 'topic content) ""))

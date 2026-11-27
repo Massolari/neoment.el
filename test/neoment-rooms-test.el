@@ -538,6 +538,16 @@ PROPS: :ago (minutes since activity), :fav, :direct, :low, :unread,
     (should (equal (neoment-room-topic (neoment-get-room "!r:s")) "new"))
     (should-not (neoment-room-last-message (neoment-get-room "!r:s")))))
 
+(ert-deftest neoment-rooms-refresh-state-alias-name ()
+  (neoment-rooms-test
+    (let ((room (neoment-rooms-test-room "!r:s" "!r:s" :ago 1)))
+      (setf (neoment-room-aliases room) '("#dev:s")))
+    (neoment-test-with-http (lambda (_) '(:ok nil))
+      (neoment-rooms-test-at "#dev:s 1m"
+        (neoment-rooms-refresh-room-state)))
+    (should (neoment-test-message-p "Refreshing state for #dev:s..."))
+    (should (neoment-test-message-p "No new state for #dev:s"))))
+
 (ert-deftest neoment-rooms-navigation ()
   (neoment-rooms-test
     (neoment-rooms-test-room "!a:s" "aaa" :ago 1 :message "hello")

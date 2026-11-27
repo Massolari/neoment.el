@@ -165,7 +165,7 @@ instead of running."
          {\"type\":\"m.room.member\",\"state_key\":\"@a:s\",
           \"content\":{\"membership\":\"join\",\"displayname\":\"A\"}}]}}}}}"))
     (let ((room (neoment-has-invited-room "!i:s")))
-      (should (equal (neoment-invited-room-name room) "#dev:example.org"))
+      (should (equal (neoment-room-display-name "!i:s") "#dev:example.org"))
       (should (equal (neoment-invited-room-topic room) "T"))
       (should (equal (neoment-invited-room-members room) '(("@a:s" . "A")))))))
 

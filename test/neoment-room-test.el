@@ -43,9 +43,10 @@
     (puthash id m (neoment-room-messages room))
     m))
 
-(defun neoment-room-test-gutter (&optional rest)
-  "Return a continuation line with REST."
-  (concat (make-string 28 ?\s) " │ " rest))
+(defun neoment-room-test-displayed (room-id &optional thread)
+  "Return the rendered lines of ROOM-ID (THREAD) as a window shows them."
+  (mapcar #'neoment-test-display
+          (split-string (neoment-room-render room-id thread) "\n")))
 
 (defun neoment-room-test-bubble (text)
   "Return TEXT between the Nerd Font bubble edges."
@@ -80,28 +81,24 @@
       (setf (neoment-room-fully-read room) "$c"
             (neoment-room-typing room) '("@alice:s" "@dave:s"))
       (should
-       (equal (neoment-room-test-plain "!r:s")
-              (string-join
-               (list (concat (make-string 28 ?\s) " ├" (make-string 16 ?─)
-                             " Monday November 23, 2026 " (make-string 16 ?─))
-                     "09:12:44               Alice │ Bom dia! Alguém viu o **release**?"
-                     (neoment-room-test-gutter "segunda linha da mesma mensagem")
-                     (neoment-room-test-gutter (concat (neoment-room-test-bubble "👍 2")
-                                                       (neoment-room-test-bubble "❤️")))
-                     (neoment-room-test-gutter (neoment-room-test-bubble "↳ 3 replies"))
-                     "09:13:02                 Bob │ ┃ Alice:"
-                     (neoment-room-test-gutter "┃ Bom dia! Alguém viu o **release**?")
-                     (neoment-room-test-gutter "┃ segunda linha da mesma mensagem")
-                     (neoment-room-test-gutter "Vi sim, saiu ontem (edited)")
-                     (neoment-room-test-gutter "Membership: Carol joined the room")
-                     (concat "09:20:11               Carol │ "
-                             (neoment-room-test-bubble (concat (neoment-icon 'image) "  Image: print.png")))
-                     (neoment-room-test-gutter "legenda da imagem")
-                     (substring-no-properties (neoment-room--unread-marker))
-                     "09:31:00                 Bob │ [Redacted]"
-                     "09:32:00                Dave │ ok"
-                     (neoment-room-test-gutter "Typing: Alice, Dave"))
-               "\n")))
+       (equal (neoment-room-test-displayed "!r:s")
+              (list (concat (make-string 17 ?─) " Monday November 23, 2026 " (make-string 17 ?─))
+                    "09:12:44               Alice Bom dia! Alguém viu o **release**?"
+                    "segunda linha da mesma mensagem"
+                    (concat (neoment-room-test-bubble "👍 2") (neoment-room-test-bubble "❤️"))
+                    (neoment-room-test-bubble "↳ 3 replies")
+                    "09:13:02                 Bob ┃ Alice:"
+                    "┃ Bom dia! Alguém viu o **release**?"
+                    "┃ segunda linha da mesma mensagem"
+                    "Vi sim, saiu ontem (edited)"
+                    "Membership: Carol joined the room"
+                    (concat "09:20:11               Carol "
+                            (neoment-room-test-bubble (concat (neoment-icon 'image) "  Image: print.png")))
+                    "legenda da imagem"
+                    (substring-no-properties (neoment-room--unread-marker))
+                    "09:31:00                 Bob [Redacted]"
+                    "09:32:00                Dave ok"
+                    "Typing: Alice, Dave")))
       ;; The thread buffer shows the root and its reply only.
       (let ((thread (neoment-room-test-plain "!r:s" "$a")))
         (should (string-search "thread reply" thread))
@@ -121,29 +118,88 @@
         (should (memq 'neoment-mention (face-at "Bob](")))
         (should (memq 'neoment-emoticon (face-at "img: :party:](")))
         (should-not (memq 'neoment-emoticon (face-at "img: x](")))
-        (should (memq 'neoment-user-1 (face-at "Alice")))
-        (should (memq 'neoment-separator (face-at " │ hi")))
         (should (memq 'neoment-comment (face-at "Membership")))
         (should (memq 'neoment-bubble-active-content (face-at "👍")))
         (should (memq 'neoment-bubble-content (face-at "🎉"))))
-      (should (get-text-property (string-search "09:00:00" text) 'neoment-decoration text))
+      ;; Time and sender are margin text on a decoration anchor.
+      (let* ((anchor (1- (string-search "hi" text)))
+             (margin (neoment-test-margin (substring text anchor))))
+        (should (get-text-property anchor 'neoment-decoration text))
+        (should (string-prefix-p "09:00:00 " margin))
+        (should-not (string-search "09:00:00" (substring-no-properties text)))
+        (should (memq 'neoment-user-1
+                      (ensure-list (get-text-property (string-search "Alice" margin)
+                                                      'face margin)))))
       (should-not (get-text-property (string-search "hi" text) 'neoment-decoration text))
       (should (equal (get-text-property (string-search "hi" text) 'neoment-message text) "$a"))
       (should (equal (get-text-property (string-search "👍" text) 'neoment-reaction text)
                      '(:key "👍" :senders ("@me:s"))))
-      (should (equal (get-text-property 0 'wrap-prefix text) (neoment-room--wrap-prefix))))))
+      ;; No line carries a wrap prefix.
+      (should-not (text-property-not-all 0 (length text) 'wrap-prefix nil text)))))
 
 (ert-deftest neoment-room-render-name-rules ()
   (neoment-room-test
     (neoment-set-display-name "@long:s" "ABCDEFGHIJKLMNOPQRSTUVWXY" 1)
     (neoment-room-test-msg room "$1" "@long:s" "x" (neoment-room-test-ts 9 0 0))
     (neoment-room-test-msg room "$2" "@alice:s" "hi" (neoment-room-test-ts 9 12 44))
-    (let ((lines (split-string (neoment-room-test-plain "!r:s") "\n")))
-      (should (equal (nth 1 lines) "09:00:00 ABCDEFGHIJKLMNOPQRS │ x"))
-      (should (equal (nth 2 lines) "09:12:44               Alice │ hi")))
+    (let ((lines (neoment-room-test-displayed "!r:s")))
+      (should (equal (nth 1 lines) "09:00:00 ABCDEFGHIJKLMNOPQRS x"))
+      (should (equal (nth 2 lines) "09:12:44               Alice hi")))
     ;; Colours are assigned in order of first appearance and stay stable.
     (should (eq (neoment-room--sender-face room "@long:s") 'neoment-user-1))
     (should (eq (neoment-room--sender-face room "@alice:s") 'neoment-user-2))))
+
+(ert-deftest neoment-room-header-margin ()
+  (neoment-room-test
+    (neoment-set-display-name "@long:s" "ABCDEFGHIJKLMNOPQRSTUVWXY" 1)
+    (neoment-set-display-name "@heart:s" (apply #'concat (make-list 20 "❤️")) 1)
+    (neoment-set-display-name "@wide:s" (make-string 20 ?Ａ) 1)
+    (let ((msg (lambda (sender &rest props)
+                 (apply #'neoment-message--create :id "$h" :sender sender :content "x"
+                        :timestamp (neoment-room-test-ts 9 12 44) props))))
+      (cl-flet ((margin (message)
+                  (neoment-test-margin (neoment-room--header room message))))
+        ;; Short and long names
+        (should (equal (substring-no-properties (margin (funcall msg "@alice:s")))
+                       "09:12:44               Alice "))
+        (should (equal (substring-no-properties (margin (funcall msg "@long:s")))
+                       "09:12:44 ABCDEFGHIJKLMNOPQRS "))
+        ;; The anchor is one decoration character.
+        (let ((header (neoment-room--header room (funcall msg "@alice:s"))))
+          (should (= (length header) 1))
+          (should (get-text-property 0 'neoment-decoration header)))
+        ;; Wide and composed glyphs keep the margin text 29 columns wide.
+        (save-window-excursion
+          (with-temp-buffer
+            (set-window-buffer nil (current-buffer))
+            (dolist (sender '("@alice:s" "@long:s" "@heart:s" "@wide:s"))
+              (should (= (string-width (margin (funcall msg sender)))
+                         neoment-room-margin-width)))
+            (should (equal (substring-no-properties (margin (funcall msg "@wide:s")))
+                           (concat "09:12:44  " (make-string 9 ?Ａ) " ")))))
+        ;; Redacted: the margin text is in the comment face.
+        (let ((m (margin (funcall msg "@bob:s" :was-redacted t))))
+          (should (memq 'neoment-comment (ensure-list (get-text-property 0 'face m))))
+          (should (memq 'neoment-comment
+                        (ensure-list (get-text-property (string-search "Bob" m) 'face m)))))
+        ;; State: no anchor and no margin.
+        (should (equal (neoment-room--header room (funcall msg "@carol:s" :is-state t)) ""))))
+    ;; In the rendered text, the state line starts with its content.
+    (neoment-room-test-msg room "$s" "@carol:s" "Membership: Carol joined the room"
+                           (neoment-room-test-ts 9 1 0) :is-state t)
+    (let ((line (nth 1 (split-string (neoment-room-render "!r:s") "\n"))))
+      (should-not (neoment-test-margin line))
+      (should (equal (substring-no-properties line) "Membership: Carol joined the room")))))
+
+(ert-deftest neoment-room-mode-left-margin ()
+  (neoment-room-test
+    (let ((buffer (generate-new-buffer "x")))
+      (neoment-room--setup-buffer buffer "!r:s")
+      (should (= (buffer-local-value 'left-margin-width buffer) 29))
+      (save-window-excursion
+        (set-window-buffer nil buffer)
+        (should (= (car (window-margins)) 29)))
+      (kill-buffer buffer))))
 
 (defun neoment-room-test-check-pad-name (name)
   "Check `neoment-room--pad-name' on NAME and return the visible part.
@@ -201,11 +257,15 @@ NAME that ends on a glyph boundary."
   (neoment-room-test
     (neoment-room-test-msg room "$1" "@alice:s" "a\n   \nb" (neoment-room-test-ts 23 0 0 22))
     (neoment-room-test-msg room "$2" "@alice:s" "c" (neoment-room-test-ts 1 0 0 23))
-    (let ((lines (split-string (neoment-room-test-plain "!r:s") "\n")))
+    (let ((lines (neoment-room-test-displayed "!r:s")))
       (should (string-search " Sunday November 22, 2026 " (nth 0 lines)))
-      (should (equal (nth 2 lines) (neoment-room-test-gutter "")))
+      (should (equal (nth 2 lines) ""))
       (should (string-search " Monday November 23, 2026 " (nth 4 lines)))
-      (should (string-prefix-p "01:00:00" (nth 5 lines))))))
+      (should (string-prefix-p "01:00:00" (nth 5 lines)))
+      ;; Separators are bare 60-column rules.
+      (dolist (sep (list (nth 0 lines) (nth 4 lines)))
+        (should (string-prefix-p "─" sep))
+        (should (= (string-width sep) 60))))))
 
 (ert-deftest neoment-room-render-attachments ()
   (should (equal (neoment-room-format-bytes 1536) "1.50 KB"))
@@ -246,7 +306,11 @@ NAME that ends on a glyph boundary."
     (setf (neoment-room-fully-read room) "$1")
     (should-not (string-search "New messages" (neoment-room-test-plain "!r:s")))
     (neoment-room-test-msg room "$3" "@bob:s" "b" (neoment-room-test-ts 9 2 0))
-    (should (string-search "New messages" (neoment-room-test-plain "!r:s")))))
+    (let ((marker (seq-find (lambda (l) (string-search "New messages" l))
+                            (neoment-room-test-displayed "!r:s"))))
+      (should marker)
+      (should (string-prefix-p "─" marker))
+      (should (= (string-width marker) 60)))))
 
 (ert-deftest neoment-room-render-tombstone-and-reply-placeholder ()
   (neoment-room-test
@@ -255,14 +319,13 @@ NAME that ends on a glyph boundary."
     (setf (neoment-room-tombstone room) '(:body "This room has been upgraded"
                                                 :replacement-room "!new:s"))
     (let* ((text (neoment-room-render "!r:s"))
-           (lines (split-string (substring-no-properties text) "\n")))
-      (should (equal (nth 1 lines) "09:00:00               Alice │ ┃ …"))
+           (lines (neoment-room-test-displayed "!r:s")))
+      (should (equal (nth 1 lines) "09:00:00               Alice ┃ …"))
       (should (equal (last lines 4)
-                     (list (neoment-room-test-gutter)
-                           (neoment-room-test-gutter "This room has been upgraded")
-                           (neoment-room-test-gutter "New room: !new:s")
-                           (neoment-room-test-gutter
-                            "Use M-x neoment-join !new:s to join the new room."))))
+                     (list ""
+                           "This room has been upgraded"
+                           "New room: !new:s"
+                           "Use M-x neoment-join !new:s to join the new room.")))
       (should (eq (get-text-property (string-search "New room" text) 'face text)
                   'neoment-tombstone)))))
 
@@ -634,7 +697,7 @@ NAME that ends on a glyph boundary."
     (let ((buffer (generate-new-buffer "x")))
       (neoment-room--setup-buffer buffer "!r:s")
       (with-current-buffer buffer
-        (should (equal (buffer-string) (neoment-room-test-gutter "Loading...")))
+        (should (equal (buffer-string) "Loading..."))
         (should visual-line-mode)
         (should hl-line-mode)
         (should (equal (neoment-room--header-line) "dev - Daily chat"))
@@ -644,11 +707,27 @@ NAME that ends on a glyph boundary."
     (let ((buffer (neoment-room-test-buffer)))
       (with-current-buffer buffer
         (goto-char (point-min))
-        (search-forward "09:12:44")
+        (search-forward "hi")
         (should (equal (filter-buffer-substring (line-beginning-position)
                                                 (line-end-position))
                        "hi"))
         (should (equal (filter-buffer-substring (point-min) (point-max)) "hi")))
+      (kill-buffer buffer))))
+
+(ert-deftest neoment-room-copy-leaves-out-margin ()
+  (neoment-room-test
+    (neoment-room-test-msg room "$a" "@alice:s" "hi" (neoment-room-test-ts 9 12 44))
+    (neoment-room-test-msg room "$b" "@bob:s" "one\ntwo" (neoment-room-test-ts 9 13 0))
+    (let ((buffer (neoment-room-test-buffer)))
+      (with-current-buffer buffer
+        (goto-char (point-min))
+        (search-forward "hi")
+        (should (equal (filter-buffer-substring (line-beginning-position) (line-end-position))
+                       "hi"))
+        (search-forward "one")
+        (let ((beg (line-beginning-position)))
+          (forward-line 1)
+          (should (equal (filter-buffer-substring beg (line-end-position)) "one\ntwo"))))
       (kill-buffer buffer))))
 
 ;;;; 5.3 Stable re-render
@@ -677,13 +756,14 @@ NAME that ends on a glyph boundary."
 ;;;; Hiding and copying markup
 
 (defun neoment-room-test-visible-line ()
-  "Return the visible text of the current line."
+  "Return the current line as a window shows it.
+That is its margin string, then its text without invisible characters."
   (let ((result nil))
     (dotimes (i (- (line-end-position) (line-beginning-position)))
       (let ((pos (+ (line-beginning-position) i)))
         (unless (invisible-p pos)
-          (push (char-after pos) result))))
-    (concat (nreverse result))))
+          (push (buffer-substring pos (1+ pos)) result))))
+    (neoment-test-display (apply #'concat (nreverse result)))))
 
 (ert-deftest neoment-room-hide-markup ()
   (neoment-room-test
@@ -701,23 +781,23 @@ NAME that ends on a glyph boundary."
                   (line-of (s) (save-excursion (goto-char (point-min)) (search-forward s)
                                                (neoment-room-test-visible-line))))
           ;; Default display
-          (should (equal (line-of "**this") "09:12:44               Alice │ this"))
+          (should (equal (line-of "**this") "09:12:44               Alice this"))
           (should (memq 'neoment-bold (ensure-list (get-text-property (pos-of "this*") 'face))))
           (should (invisible-p (pos-of "**this")))
-          (should (equal (line-of "[Alice]") "09:13:00                 Bob │ Alice"))
+          (should (equal (line-of "[Alice]") "09:13:00                 Bob Alice"))
           (should (invisible-p (pos-of "](https")))
           (should (invisible-p (pos-of "matrix.to")))
           ;; Code fence display
-          (should (equal (line-of "```elisp") "09:14:00               Carol │ elisp"))
+          (should (equal (line-of "```elisp") "09:14:00               Carol elisp"))
           (should-not (invisible-p (pos-of "elisp")))
-          (should (equal (line-of "(car x)") (neoment-room-test-gutter "(car x)")))
+          (should (equal (line-of "(car x)") "(car x)"))
           (should (equal (save-excursion (goto-char (pos-of "(car x)")) (forward-line 1)
                                          (neoment-room-test-visible-line))
-                         (neoment-room-test-gutter)))
+                         ""))
           ;; Markup shown
           (setq neoment-room-hide-markup nil)
           (revert-buffer)
-          (should (equal (line-of "**this") "09:12:44               Alice │ **this**"))
+          (should (equal (line-of "**this") "09:12:44               Alice **this**"))
           (should-not (invisible-p (pos-of "**this")))
           (should (memq 'neoment-markup (ensure-list (get-text-property (pos-of "**this") 'face))))
           (should-not (invisible-p (pos-of "](https")))

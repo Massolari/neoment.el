@@ -84,5 +84,24 @@ PROPS keys are :id, :sender, :ts, :content, :state-key, :unsigned."
       (setq event (append event `((unsigned . ,(plist-get props :unsigned))))))
     event))
 
+(defun neoment-test-margin (line)
+  "Return the left-margin string of LINE, or nil when it has none.
+LINE is a rendered room line; its margin comes from a display property
+on its first character."
+  (let ((spec (and (> (length line) 0) (get-text-property 0 'display line))))
+    (and (consp spec) (equal (car spec) '(margin left-margin))
+         (cadr spec))))
+
+(defun neoment-test-display (line)
+  "Return LINE as a window shows it: its margin string, then its text.
+The margin anchor character is left out.  The result has no properties."
+  (let ((margin (neoment-test-margin line)))
+    (substring-no-properties
+     (if margin (concat margin (substring line 1)) line))))
+
+(defun neoment-test-display-current-line ()
+  "Return the current buffer line as a window shows it."
+  (neoment-test-display (buffer-substring (line-beginning-position) (line-end-position))))
+
 (provide 'test-helper)
 ;;; test-helper.el ends here

@@ -19,13 +19,13 @@
 
 ;;; Commentary:
 
-;; Room and thread buffers: a read-only timeline with a fixed 31-column
-;; gutter (time and sender), date separators, rich replies, reactions,
-;; the "New messages" marker, typing and tombstone notices.
+;; Room and thread buffers: a read-only timeline with time and sender
+;; in a fixed 29-column left margin, date separators, rich replies,
+;; reactions, the "New messages" marker, typing and tombstone notices.
 ;;
 ;; `neoment-room-render' is a pure function of the model.  Every
 ;; message line carries the `neoment-message' property (the message's
-;; effective id); time, sender, gutters, separators and bubbles carry
+;; effective id); the margin anchor, separators and bubbles carry
 ;; `neoment-decoration' and are left out when copying.
 
 ;;; Code:
@@ -46,10 +46,10 @@
 (declare-function neoment-room-open-attachment "neoment-media")
 
 (defconst neoment-room-name-width 19
-  "Width of the sender name in the gutter.")
+  "Width of the sender name in the left margin.")
 
-(defconst neoment-room-header-width 31
-  "Width of the message gutter.")
+(defconst neoment-room-margin-width 29
+  "Width of the left margin, which shows the time and sender.")
 
 (defconst neoment-room-separator-width 60
   "Width of date separators and the unread marker.")
@@ -102,22 +102,12 @@ inserted and before point and window starts are restored.")
               t))))
 
 (defun neoment-room--separator ()
-  "Return the gutter separator \" │ \"."
+  "Return the bubble field separator \" │ \"."
   (concat " " (neoment-icon 'vertical_bar) " "))
-
-(defun neoment-room--gutter ()
-  "Return the decoration that starts continuation lines."
-  (propertize (concat (make-string 28 ?\s) (neoment-room--separator))
-              'face 'neoment-separator 'neoment-decoration t))
-
-(defun neoment-room--wrap-prefix ()
-  "Return the `wrap-prefix' of message lines."
-  (concat (make-string 29 ?\s)
-          (propertize (concat (neoment-icon 'vertical_bar) " ") 'face 'neoment-separator)))
 
 (defun neoment-room--rule (text)
   "Return TEXT centred in a rule of `─' as wide as the separators."
-  (let* ((half (/ (- neoment-room-separator-width (string-width text) 2) 2.0)))
+  (let* ((half (/ (- neoment-room-separator-width (string-width text)) 2.0)))
     (concat (make-string (max 0 (floor half)) ?─) text
             (make-string (max 0 (ceiling half)) ?─))))
 
@@ -127,16 +117,13 @@ inserted and before point and window starts are restored.")
 
 (defun neoment-room--date-separator (timestamp)
   "Return the date separator for TIMESTAMP (ms), without newline."
-  (concat (propertize (concat (make-string 28 ?\s) " " (neoment-icon 'tree_branch))
-                      'face 'neoment-separator)
-          (propertize (neoment-room--rule (concat " " (neoment-room--date timestamp) " "))
-                      'face 'neoment-comment)))
+  (propertize (neoment-room--rule (concat " " (neoment-room--date timestamp) " "))
+              'face 'neoment-comment))
 
 (defun neoment-room--unread-marker ()
   "Return the \"New messages\" line, without newline."
   (let ((icon (neoment-icon 'down_arrow_circle)))
-    (propertize (concat (make-string 28 ?\s) " " (neoment-icon 'tree_branch)
-                        (neoment-room--rule (concat icon "  New messages " icon " ")))
+    (propertize (neoment-room--rule (concat icon "  New messages " icon " "))
                 'face 'neoment-separator)))
 
 (defun neoment-room--sender-face (room sender)
@@ -175,19 +162,33 @@ glyphs, so composed emoji are neither split nor miscounted."
   (concat (make-string (max 0 (- neoment-room-name-width (string-width name))) ?\s)
           name))
 
+(defun neoment-room--margin-string (room message)
+  "Return the margin text of the first line of MESSAGE in ROOM.
+It is the time, the padded sender name and a space, in the comment
+face when MESSAGE was redacted."
+  (let ((text (concat (format-time-string "%H:%M:%S"
+                                          (/ (or (neoment-message-timestamp message) 0) 1000)
+                                          neoment-room-time-zone)
+                      " "
+                      (propertize (neoment-room--pad-name
+                                   (neoment-display-name (neoment-message-sender message)))
+                                  'face (neoment-room--sender-face
+                                         room (neoment-message-sender message)))
+                      " ")))
+    (when (neoment-message-was-redacted message)
+      (add-face-text-property 0 (length text) 'neoment-comment t text))
+    text))
+
 (defun neoment-room--header (room message)
-  "Return the gutter of the first line of MESSAGE in ROOM."
+  "Return the start of the first line of MESSAGE in ROOM.
+For a non-state message this is a one-character anchor that shows
+the time and sender in the left margin; for a state message it is
+the empty string."
   (if (neoment-message-is-state message)
-      (neoment-room--gutter)
-    (propertize
-     (concat (format-time-string "%H:%M:%S" (/ (or (neoment-message-timestamp message) 0) 1000)
-                                 neoment-room-time-zone)
-             " "
-             (propertize (neoment-room--pad-name
-                          (neoment-display-name (neoment-message-sender message)))
-                         'face (neoment-room--sender-face room (neoment-message-sender message)))
-             (propertize (neoment-room--separator) 'face 'neoment-separator))
-     'neoment-decoration t)))
+      ""
+    (propertize " " 'display `((margin left-margin)
+                               ,(neoment-room--margin-string room message))
+                'neoment-decoration t)))
 
 (defun neoment-room--body-text (message)
   "Return the markdown body of MESSAGE."
@@ -676,9 +677,7 @@ THREAD-ROOT-ID is the thread of the buffer, if any."
              (lambda (line)
                (let* ((line (if (string-blank-p line) "" line))
                       (styled (neoment-room--style-line line))
-                      (text (concat (if first
-                                        (neoment-room--header room message)
-                                      (neoment-room--gutter))
+                      (text (concat (if first (neoment-room--header room message) "")
                                     styled)))
                  (when (and first (or (neoment-message-is-state message)
                                       (neoment-message-was-redacted message)))
@@ -698,27 +697,22 @@ THREAD-ROOT-ID is the thread of the buffer, if any."
       ;; Reactions
       (let ((reactions (neoment-room--reaction-line message)))
         (when reactions
-          (setq lines (append lines (list (cons (concat (neoment-room--gutter) reactions)
-                                                props))))))
+          (setq lines (append lines (list (cons reactions props))))))
       ;; Thread indicator
       (let ((count (neoment-message-thread-replies-count message)))
         (when (and (not thread-root-id) count (> count 0))
           (setq lines (append lines
-                              (list (cons (concat (neoment-room--gutter)
-                                                  (neoment-room--thread-bubble count))
-                                          props))))))
+                              (list (cons (neoment-room--thread-bubble count) props))))))
       lines)))
 
 (defun neoment-room--join-lines (lines)
   "Join LINES, a list of (TEXT . PROPERTIES), into the buffer text."
-  (let ((prefix (neoment-room--wrap-prefix)))
-    (mapconcat
-     (lambda (line)
-       (let ((text (concat (car line) "\n")))
-         (add-text-properties 0 (length text) (cdr line) text)
-         (add-text-properties 0 (length text) (list 'wrap-prefix prefix) text)
-         text))
-     lines "")))
+  (mapconcat
+   (lambda (line)
+     (let ((text (concat (car line) "\n")))
+       (add-text-properties 0 (length text) (cdr line) text)
+       text))
+   lines ""))
 
 (defun neoment-room-render (room-id &optional thread-root-id)
   "Return the timeline text of ROOM-ID.
@@ -750,24 +744,22 @@ With THREAD-ROOT-ID, render that thread instead."
     ;; Tombstone
     (let ((tombstone (neoment-room-tombstone room)))
       (when tombstone
-        (push (cons (neoment-room--gutter) '(neoment-tombstone t)) lines)
+        (push (cons "" '(neoment-tombstone t)) lines)
         (let* ((replacement (plist-get tombstone :replacement-room))
                (text (if replacement
                          (format "%s\nNew room: %s\nUse M-x neoment-join %s to join the new room."
                                  (plist-get tombstone :body) replacement replacement)
                        (plist-get tombstone :body))))
           (dolist (line (split-string text "\n" t))
-            (push (cons (concat (neoment-room--gutter)
-                                (propertize line 'face 'neoment-tombstone))
+            (push (cons (propertize line 'face 'neoment-tombstone)
                         '(neoment-tombstone t))
                   lines)))))
     ;; Typing
     (let ((typing (neoment-room-typing room)))
       (when typing
-        (push (cons (concat (neoment-room--gutter)
-                            (propertize (concat "Typing: "
-                                                (mapconcat #'neoment-display-name typing ", "))
-                                        'face 'neoment-comment))
+        (push (cons (propertize (concat "Typing: "
+                                        (mapconcat #'neoment-display-name typing ", "))
+                                'face 'neoment-comment)
                     '(neoment-decoration t))
               lines)))
     (string-remove-suffix "\n" (neoment-room--join-lines (nreverse lines)))))
@@ -885,7 +877,8 @@ DELETE is passed on to `buffer-substring--filter'."
               truncate-lines nil
               filter-buffer-substring-function #'neoment-room--filter-substring
               revert-buffer-function (lambda (&rest _) (neoment-room-render-buffer))
-              header-line-format '(:eval (neoment-room--header-line)))
+              header-line-format '(:eval (neoment-room--header-line))
+              left-margin-width neoment-room-margin-width)
   (neoment-room--sync-invisibility)
   (when (fboundp 'display-line-numbers-mode)
     (display-line-numbers-mode -1))
@@ -1147,8 +1140,7 @@ CALLBACK, if non-nil, is called with (:ok nil) or (:error ERR)."
           neoment--thread-root-id thread-root-id)
     (let ((inhibit-read-only t))
       (erase-buffer)
-      (insert (or initial
-                  (concat (make-string 28 ?\s) (neoment-room--separator) "Loading..."))))))
+      (insert (or initial "Loading...")))))
 
 (defun neoment-room-open (room-id)
   "Show the buffer of ROOM-ID in the selected window, creating it."
@@ -1268,7 +1260,7 @@ unless SILENT."
         (unless existing
           (neoment-room--setup-buffer
            buffer room-id root-id
-           (concat (make-string 28 ?\s) (neoment-room--separator) "Loading thread...")))
+           "Loading thread..."))
         (let ((window (display-buffer buffer '((display-buffer-in-direction)
                                                (direction . right)
                                                (window-width . 50)))))

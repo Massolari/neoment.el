@@ -146,7 +146,7 @@ the entry.  Return the fraction now in effect."
 IMAGE-WIDTH and IMAGE-HEIGHT are the real size, when known.  FRACTION
 is the max height as a fraction of the window height."
   (let* ((char (frame-char-width (window-frame window)))
-         (max-w (* char (max 1 (- (window-width window) neoment-room-header-width 4))))
+         (max-w (* char (max 1 (- (window-width window) 4))))
          (max-h (* fraction (window-pixel-height window))))
     (cons (truncate (if image-width (min image-width max-w) max-w))
           (truncate (if image-height (min image-height max-h) max-h)))))
@@ -172,9 +172,8 @@ A window on a graphical frame is preferred, from any frame."
 
 (defun neoment-media--image-text (image file key)
   "Return the image line text showing IMAGE (from FILE) for message KEY."
-  (let* ((line (concat (make-string neoment-room-header-width ?\s)
-                       (propertize " " 'display image 'neoment-image-file file
-                                   'help-echo neoment-media--image-help)))
+  (let* ((line (propertize " " 'display image 'neoment-image-file file
+                           'help-echo neoment-media--image-help))
          (text (progn
                  (add-text-properties 0 (length line)
                                       (list 'keymap neoment-media-image-map) line)

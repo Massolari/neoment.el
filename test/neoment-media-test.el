@@ -128,9 +128,9 @@ Downloads write \"data\" to the requested output file."
       (cl-letf (((symbol-function 'window-width) (lambda (&rest _) 100))
                 ((symbol-function 'window-pixel-height) (lambda (&rest _) 1000))
                 ((symbol-function 'frame-char-width) (lambda (&rest _) 10)))
-        (should (equal (neoment-media-image-size w nil nil 0.2) '(650 . 200)))
+        (should (equal (neoment-media-image-size w nil nil 0.2) '(960 . 200)))
         (should (equal (neoment-media-image-size w 300 100 0.2) '(300 . 100)))
-        (should (equal (neoment-media-image-size w nil 5000 1.0) '(650 . 1000)))
+        (should (equal (neoment-media-image-size w nil 5000 1.0) '(960 . 1000)))
         (should (equal (neoment-media-image-size w 300 700 1.0) '(300 . 700)))))))
 
 (ert-deftest neoment-media-image-fraction ()
@@ -172,8 +172,8 @@ Downloads write \"data\" to the requested output file."
                 (should (get-text-property (point) 'neoment-header))
                 (forward-line 1)
                 (should (neoment-media-test-on-image-p "$i"))
-                (should (= (neoment-room--image-position "$i")
-                           (+ (point) neoment-room-header-width)))
+                ;; The image is the first character of its line.
+                (should (= (neoment-room--image-position "$i") (point)))
                 (let ((img (neoment-room--image-position "$i")))
                   (should (equal (get-text-property img 'neoment-image-file)
                                  (plist-get (cdr (get-text-property img 'display)) :file))))
@@ -408,7 +408,7 @@ Downloads write \"data\" to the requested output file."
                 ;; The header line, then the caption line right after the image.
                 (should-not (eq (key-binding "+") #'neoment-room-image-enlarge))
                 (forward-line 2)
-                (should (looking-at-p " *│ caption"))
+                (should (looking-at-p "caption"))
                 (should-not (eq (key-binding "+") #'neoment-room-image-enlarge))
                 (should (eq (key-binding "o") #'neoment-room-open-attachment))
                 (neoment-room-image-enlarge)

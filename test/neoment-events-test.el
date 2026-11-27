@@ -1729,6 +1729,73 @@ entry."
                    '(("👍" ("$r" . "@bob:s")))))
     (should (zerop (hash-table-count (neoment-room-pending-events room))))))
 
+(defun neoment-events-test-reaction (id target key ts &optional sender)
+  "Return a reaction ID with KEY to TARGET at TS by SENDER (default @bob:s)."
+  (neoment-test-event "m.reaction" :id id :ts ts :sender (or sender "@bob:s")
+                      :content `((m.relates_to . ((rel_type . "m.annotation")
+                                                  (event_id . ,target)
+                                                  (key . ,key))))))
+
+(defmacro neoment-events-test-untracked (&rest body)
+  "Run BODY with `room' untracked, keeping `$last' from @alice:s.
+The room also saw the older message `$old' while it was tracked."
+  (declare (indent 0))
+  `(neoment-events-test
+     (neoment-events-handle-multiple
+      room (list (neoment-events-test-text "old" :id "$old" :ts 1)
+                 (neoment-events-test-text "last" :id "$last" :ts 2)))
+     (neoment-room-set-tracked room nil)
+     (should (equal (hash-table-keys (neoment-room-messages room)) '("$last")))
+     ,@body))
+
+;; Issue #19: an untracked room must not keep relations to messages it
+;; does not keep.
+(ert-deftest neoment-events-untracked-drops-unknown-relations ()
+  (neoment-events-test-untracked
+    (should-not
+     (neoment-events-handle-multiple
+      room (list (neoment-events-test-edit "$e" "$old" "new" 10)
+                 (neoment-events-test-reaction "$re" "$old" "👍" 11)
+                 (neoment-test-event "m.room.redaction" :id "$x" :ts 12
+                                     :content '((redacts . "$old"))))))
+    (should (zerop (hash-table-count (neoment-room-pending-events room))))
+    (should (equal (hash-table-keys (neoment-room-messages room)) '("$last")))
+    (let ((m (neoment-room-get-message room "$last")))
+      (should (equal (neoment-message-content m) "last"))
+      (should (equal (neoment-message-id m) "$last"))
+      (should-not (neoment-message-reactions m))
+      (should-not (neoment-message-was-redacted m)))))
+
+(ert-deftest neoment-events-untracked-edits-kept-message ()
+  (neoment-events-test-untracked
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-edit "$le" "$last" "fixed" 10)))
+    (should (equal (neoment-message-content (neoment-room-get-message room "$last"))
+                   "fixed"))
+    (should (zerop (hash-table-count (neoment-room-pending-events room))))))
+
+(ert-deftest neoment-events-untracked-redacts-kept-message ()
+  (neoment-events-test-untracked
+    (neoment-events-handle-multiple
+     room (list (neoment-test-event "m.room.redaction" :id "$x" :ts 10
+                                    :content '((redacts . "$last")))))
+    (let ((m (neoment-room-get-message room "$last")))
+      (should (equal (neoment-message-content m) "[Redacted]"))
+      (should (neoment-message-was-redacted m)))
+    (should (zerop (hash-table-count (neoment-room-pending-events room))))))
+
+(ert-deftest neoment-events-untracked-dropped-reaction-on-open ()
+  (neoment-events-test-untracked
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-reaction "$re" "$old" "👍" 10)))
+    (neoment-room-set-tracked room t)
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-text "old" :id "$old" :ts 1)
+                (neoment-events-test-reaction "$re" "$old" "👍" 10))
+     t)
+    (should (equal (neoment-message-reactions (neoment-room-get-message room "$old"))
+                   '(("👍" ("$re" . "@bob:s")))))))
+
 (ert-deftest neoment-client-add-message-keys-by-effective-id ()
   (neoment-events-test
     (neoment-room-set-tracked room nil)

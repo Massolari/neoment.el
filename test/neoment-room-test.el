@@ -236,7 +236,7 @@ NAME that ends on a glyph boundary."
                            nil)))
       (should (equal (bubble '(:type location :url "https://maps") "Here")
                      (cons (neoment-room-test-bubble (concat (neoment-icon 'location) "  Location"))
-                           nil))))))
+                           "Here"))))))
 
 (ert-deftest neoment-room-render-marker-rules ()
   (neoment-room-test

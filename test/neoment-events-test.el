@@ -548,15 +548,20 @@
       (neoment-events-test-should-be-video m)
       (should (equal (neoment-message-content m) "b")))))
 
-(ert-deftest neoment-events-edit-adds-video-pending-and-embedded ()
+(ert-deftest neoment-events-edit-adds-video-pending ()
   (neoment-events-test
     ;; Edit first, then the notice.
     (neoment-events-handle-multiple
      room (list (neoment-events-test-attachment-edit
                  "$pe" "$p" "m.video" neoment-events-test-video-fields 2)))
     (neoment-events-handle-multiple room (list (neoment-events-test-notice "$p" :ts 1)))
-    (neoment-events-test-should-be-video (neoment-room-get-message room "$p"))
-    ;; Edit embedded in the original event.
+    (let ((m (neoment-room-get-message room "$p")))
+      (neoment-events-test-should-be-video m)
+      (should (equal (neoment-message-id m) "$pe"))
+      (should (equal (plist-get (neoment-message-edit-data m) :id) "$p")))))
+
+(ert-deftest neoment-events-edit-adds-video-embedded ()
+  (neoment-events-test
     (neoment-events-handle-multiple
      room (list (neoment-events-test-notice
                  "$emb" :ts 10
@@ -589,6 +594,67 @@
     (let ((att (neoment-message-attachment (neoment-room-get-message room "$t"))))
       (should (eq (plist-get att :type) 'location))
       (should (equal (plist-get att :url) "https://maps.google.com/?q=1.5,2.5")))))
+
+(ert-deftest neoment-events-edit-replaces-attachment ()
+  (neoment-events-test
+    (neoment-events-handle
+     room (neoment-test-event "m.room.message" :id "$i" :ts 1
+                              :content '((msgtype . "m.image") (body . "pic")
+                                         (url . "mxc://s/img"))))
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-attachment-edit
+                 "$e1" "$i" "m.video" neoment-events-test-video-fields 2)))
+    (neoment-events-test-should-be-video (neoment-room-get-message room "$i"))
+    ;; Another video with different info replaces the first.
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-attachment-edit
+                 "$e2" "$i" "m.video"
+                 '((url . "mxc://s/vid2")
+                   (info . ((duration . 500) (size . 10) (mimetype . "video/webm"))))
+                 3)))
+    (let ((att (neoment-message-attachment (neoment-room-get-message room "$i"))))
+      (should (equal (plist-get att :mxc-url) "mxc://s/vid2"))
+      (should (= (plist-get att :duration) 500))
+      (should (equal (plist-get att :mimetype) "video/webm")))))
+
+(ert-deftest neoment-events-edit-unusable-attachment-keeps-old ()
+  (neoment-events-test
+    (neoment-events-handle
+     room (neoment-test-event "m.room.message" :id "$i" :ts 1
+                              :content '((msgtype . "m.image") (body . "pic")
+                                         (url . "mxc://s/img"))))
+    (dolist (fields '(((url . "")) ((url . "https://x/y")) ((file . ((url . "mxc://s/enc"))))))
+      (neoment-events-handle-multiple
+       room (list (neoment-events-test-attachment-edit
+                   (format "$e%S" fields) "$i" "m.image" fields
+                   (+ 10 (random 1000))))))
+    (should (equal (plist-get (neoment-message-attachment
+                               (neoment-room-get-message room "$i"))
+                              :mxc-url)
+                   "mxc://s/img"))))
+
+(ert-deftest neoment-events-edit-attachment-stale-ignored ()
+  (neoment-events-test
+    (neoment-events-handle-multiple room (list (neoment-events-test-notice "$n" :ts 1)))
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-edit "$e1" "$n" "newer" 10)))
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-attachment-edit
+                 "$e2" "$n" "m.video" neoment-events-test-video-fields 5)))
+    (let ((m (neoment-room-get-message room "$n")))
+      (should-not (neoment-message-attachment m))
+      (should (equal (neoment-message-content m) "newer")))))
+
+(ert-deftest neoment-events-edit-attachment-state-ignored ()
+  (neoment-events-test
+    (neoment-events-handle
+     room (neoment-test-event "m.room.topic" :id "$s" :ts 1 :state-key ""
+                              :content '((topic . "t"))))
+    (neoment-events-handle-multiple
+     room (list (neoment-events-test-attachment-edit
+                 "$e" "$s" "m.video" neoment-events-test-video-fields 2)))
+    (let ((m (neoment-room-get-message room "$s")))
+      (when m (should-not (neoment-message-attachment m))))))
 
 (ert-deftest neoment-events-edit-attachment-ignored ()
   (neoment-events-test

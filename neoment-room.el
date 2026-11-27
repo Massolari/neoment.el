@@ -218,8 +218,7 @@ CAPTION is nil when there is none."
               ('file (concat (neoment-icon 'file) "  File" name-part sep size))
               ('audio (concat (neoment-icon 'audio) "  Audio" name-part sep duration sep size))
               ('video (concat (neoment-icon 'video) "  Video" name-part sep duration sep size))
-              ('location (setq caption nil)
-                         (concat (neoment-icon 'location) "  Location"))
+              ('location (concat (neoment-icon 'location) "  Location"))
               (_ (concat (neoment-icon 'file) "  File" name-part)))))
       (cons (propertize (neoment-faces-bubble text) 'neoment-decoration t
                         'neoment-attachment t)

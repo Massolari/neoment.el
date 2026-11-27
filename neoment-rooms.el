@@ -779,7 +779,7 @@ Show a message and return nil when there is none, unless SILENT."
   (let ((room-id (neoment-rooms--room-at-point)))
     (when room-id
       (let* ((room (neoment-get-room room-id))
-             (name (neoment-room-name room)))
+             (name (neoment-room-display-name room-id)))
         (neoment-notify--message (format "Refreshing state for %s..." name))
         (neoment-api-request
          'get (neoment-api-room-path room-id "state")

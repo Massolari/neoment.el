@@ -50,6 +50,11 @@
     (should (equal (neoment-room-display-name "!r:s") "Alice, Bob and 1 others"))
     (remhash "@carol:s" (neoment-room-members room))
     (should (equal (neoment-room-display-name "!r:s") "Alice, Bob"))
+    (setf (neoment-room-summary room)
+          '(:heroes ("@alice:s" "@bob:s") :joined 3 :invited 0))
+    (should (equal (neoment-room-display-name "!r:s") "Alice, Bob"))
+    (setf (neoment-room-aliases room) '("#dev:s" "#alt:s"))
+    (should (equal (neoment-room-display-name "!r:s") "#dev:s"))
     (setf (neoment-room-name room) "dev")
     (should (equal (neoment-room-display-name "!r:s") "dev"))))
 
@@ -327,11 +332,31 @@
       (neoment-events-handle-invited
        invited (neoment-test-event "m.room.canonical_alias"
                                    :content '((alias . "") (alt_aliases . ["#alt:s"]))))
-      (should (equal (neoment-invited-room-name invited) "#alt:s")))
+      (should (equal (neoment-room-display-name "!j:s") "#alt:s")))
     (neoment-events-handle
      room (neoment-test-event "m.room.canonical_alias" :content '((alias . ""))))
     (should-not (neoment-room-aliases room))
     (should (equal (neoment-room-name room) (neoment-room-id room)))))
+
+(ert-deftest neoment-events-invited-name-then-alias ()
+  (neoment-events-test
+    (let ((invited (neoment-get-invited-room "!i:s")))
+      (neoment-events-handle-invited
+       invited (neoment-test-event "m.room.name" :content '((name . "Dev"))))
+      (neoment-events-handle-invited
+       invited (neoment-test-event "m.room.canonical_alias" :content '((alias . "#dev:s"))))
+      (should (equal (neoment-invited-room-alias invited) "#dev:s"))
+      (should (equal (neoment-room-display-name "!i:s") "Dev")))))
+
+(ert-deftest neoment-events-invited-alias-then-name ()
+  (neoment-events-test
+    (let ((invited (neoment-get-invited-room "!i:s")))
+      (neoment-events-handle-invited
+       invited (neoment-test-event "m.room.canonical_alias" :content '((alias . "#dev:s"))))
+      (should (equal (neoment-room-display-name "!i:s") "#dev:s"))
+      (neoment-events-handle-invited
+       invited (neoment-test-event "m.room.name" :content '((name . "Dev"))))
+      (should (equal (neoment-room-display-name "!i:s") "Dev")))))
 
 (ert-deftest neoment-events-account-data-and-state ()
   (neoment-events-test
@@ -365,7 +390,8 @@
                                  "m.room.canonical_alias" :id "$c1" :ts 1
                                  :content '((alias . "#a:s") (alt_aliases "#b:s"))))
     (should (equal (neoment-room-aliases room) '("#a:s" "#b:s")))
-    (should (equal (neoment-room-name room) "#a:s"))
+    (should (equal (neoment-room-name room) "!r:s"))
+    (should (equal (neoment-room-display-name "!r:s") "#a:s"))
     (should (equal (neoment-message-content (neoment-room-get-message room "$c1"))
                    "Alice set the room aliases to #a:s, #b:s"))
     (neoment-events-handle room (neoment-test-event "m.room.canonical_alias" :id "$c2" :ts 2
@@ -373,7 +399,57 @@
     (let ((msg (neoment-room-get-message room "$c2")))
       (should (equal (neoment-message-content msg) "Alice removed the room aliases"))
       (should (neoment-message-is-state msg)))
-    (should (null (neoment-room-aliases room)))))
+    (should (null (neoment-room-aliases room)))
+    (should (equal (neoment-room-name room) "!r:s"))
+    (should (equal (neoment-room-display-name "!r:s") "Empty room"))))
+
+;;;; Alias-derived display name (issue #22)
+
+(ert-deftest neoment-events-alias-change-renames-unnamed-room ()
+  (neoment-events-test
+    (neoment-events-handle room (neoment-test-event "m.room.canonical_alias" :ts 1
+                                                    :state-key ""
+                                                    :content '((alias . "#old:s"))))
+    (should (equal (neoment-room-display-name "!r:s") "#old:s"))
+    (neoment-events-handle room (neoment-test-event "m.room.canonical_alias" :ts 2
+                                                    :state-key ""
+                                                    :content '((alias . "#new:s"))))
+    (should (equal (neoment-room-display-name "!r:s") "#new:s"))))
+
+(ert-deftest neoment-events-alias-removed-from-unnamed-room ()
+  (neoment-events-test
+    (dolist (m '("@me:s" "@alice:s"))
+      (puthash m t (neoment-room-members room)))
+    (neoment-set-display-name "@alice:s" "Alice" 1)
+    (neoment-events-handle room (neoment-test-event "m.room.canonical_alias" :ts 1
+                                                    :state-key ""
+                                                    :content '((alias . "#old:s"))))
+    (should (equal (neoment-room-display-name "!r:s") "#old:s"))
+    (neoment-events-handle room (neoment-test-event "m.room.canonical_alias" :ts 2
+                                                    :state-key "" :content nil))
+    (should (equal (neoment-room-display-name "!r:s") "Alice"))))
+
+(ert-deftest neoment-events-alias-keeps-explicit-name ()
+  (neoment-events-test
+    (neoment-events-handle room (neoment-test-event "m.room.name" :ts 1 :state-key ""
+                                                    :content '((name . "dev"))))
+    (neoment-events-handle room (neoment-test-event "m.room.canonical_alias" :ts 2
+                                                    :state-key ""
+                                                    :content '((alias . "#dev:s"))))
+    (should (equal (neoment-room-name room) "dev"))
+    (should (equal (neoment-room-display-name "!r:s") "dev"))))
+
+(ert-deftest neoment-events-empty-name-falls-back-to-alias ()
+  (neoment-events-test
+    (neoment-events-handle room (neoment-test-event "m.room.name" :ts 1 :state-key ""
+                                                    :content '((name . "dev"))))
+    (neoment-events-handle room (neoment-test-event "m.room.canonical_alias" :ts 2
+                                                    :state-key ""
+                                                    :content '((alias . "#dev:s"))))
+    (neoment-events-handle room (neoment-test-event "m.room.name" :ts 3 :state-key ""
+                                                    :content '((name . ""))))
+    (should (equal (neoment-room-name room) "!r:s"))
+    (should (equal (neoment-room-display-name "!r:s") "#dev:s"))))
 
 ;;;; History keeps current state (issue #13)
 
@@ -1415,6 +1491,62 @@
     (neoment-test-new-client)
     (neoment-storage-load-cache-json data)
     data))
+
+(ert-deftest neoment-storage-cache-unnamed-room-follows-alias ()
+  (let ((neoment--client nil))
+    (neoment-test-new-client)
+    (neoment-test-with-http (lambda (_) 'pending)
+      (let ((room (neoment-get-room "!r:s")))
+        (neoment-events-handle room (neoment-test-event "m.room.canonical_alias" :ts 1
+                                                        :state-key ""
+                                                        :content '((alias . "#old:s"))))
+        (let* ((data (neoment-events-test-cache-round-trip))
+               (saved (cdr (assq '!r:s (alist-get 'rooms data))))
+               (back (neoment-has-room "!r:s")))
+          (should (assq 'explicit_name saved))
+          (should (null (alist-get 'explicit_name saved)))
+          (should (equal (neoment-room-name back) "!r:s"))
+          (should (equal (neoment-room-display-name "!r:s") "#old:s"))
+          (neoment-events-handle back (neoment-test-event "m.room.canonical_alias" :ts 2
+                                                          :state-key ""
+                                                          :content '((alias . "#new:s"))))
+          (should (equal (neoment-room-display-name "!r:s") "#new:s")))))))
+
+(defun neoment-events-test-load-legacy-room (name aliases)
+  "Load a legacy cache holding room !r:s with NAME and ALIASES, no explicit_name."
+  (neoment-test-new-client)
+  (neoment-storage-load-cache-json
+   `((sync_token . "s1")
+     (rooms . ((!r:s . ((id . "!r:s") (name . ,name) (aliases . ,aliases))))))))
+
+(ert-deftest neoment-storage-cache-legacy-alias-name ()
+  (let ((neoment--client nil))
+    (neoment-test-with-http (lambda (_) 'pending)
+      (neoment-events-test-load-legacy-room "#old:s" '("#old:s"))
+      (let ((back (neoment-has-room "!r:s")))
+        (should (equal (neoment-room-name back) "!r:s"))
+        (neoment-events-handle back (neoment-test-event "m.room.canonical_alias" :ts 2
+                                                        :state-key ""
+                                                        :content '((alias . "#new:s"))))
+        (should (equal (neoment-room-display-name "!r:s") "#new:s"))))))
+
+(ert-deftest neoment-storage-cache-legacy-explicit-name ()
+  (let ((neoment--client nil))
+    (neoment-test-with-http (lambda (_) 'pending)
+      (neoment-events-test-load-legacy-room "Dev" '("#dev:s"))
+      (should (equal (neoment-room-name (neoment-has-room "!r:s")) "Dev")))))
+
+(ert-deftest neoment-storage-cache-invited-alias-round-trip ()
+  (let ((neoment--client nil))
+    (neoment-test-new-client)
+    (neoment-test-with-http (lambda (_) 'pending)
+      (neoment-events-handle-invited
+       (neoment-get-invited-room "!i:s")
+       (neoment-test-event "m.room.canonical_alias" :content '((alias . "#dev:s"))))
+      (neoment-events-test-cache-round-trip)
+      (should (equal (neoment-invited-room-alias (neoment-has-invited-room "!i:s"))
+                     "#dev:s"))
+      (should (equal (neoment-room-display-name "!i:s") "#dev:s")))))
 
 (ert-deftest neoment-storage-cache-unread-activity-round-trip ()
   (let ((neoment--client nil))

@@ -246,6 +246,9 @@ Each alist maps a name (string) to non-nil when folded."
     (maphash (lambda (k _) (push (cons k k) members)) (neoment-room-members room))
     `((id . ,(neoment-room-id room))
       (name . ,(neoment-room-name room))
+      (explicit_name . ,(if (equal (neoment-room-name room) (neoment-room-id room))
+                            :null
+                          (neoment-room-name room)))
       (aliases . ,(vconcat (neoment-room-aliases room)))
       (tombstone . ,(if (neoment-room-tombstone room)
                         (neoment-storage--plist-to-alist (neoment-room-tombstone room))
@@ -290,11 +293,24 @@ Each alist maps a name (string) to non-nil when folded."
                           (invited . ,(or (plist-get summary :invited) 0)))
                       :null))))))
 
+(defun neoment-storage--room-name-from-json (data)
+  "Return the explicit name of the room in DATA, or its id when it has none.
+A cache from an older version has no explicit_name key and may hold an
+alias-derived name under name: a name equal to one of the cached
+aliases is then treated as no explicit name."
+  (let ((id (alist-get 'id data)))
+    (if (assq 'explicit_name data)
+        (or (alist-get 'explicit_name data) id)
+      (let ((name (alist-get 'name data)))
+        (if (or (null name) (member name (alist-get 'aliases data)))
+            id
+          name)))))
+
 (defun neoment-storage--room-from-json (data)
   "Return the room described by the parsed JSON DATA."
   (let ((room (neoment-room--create
                :id (alist-get 'id data)
-               :name (or (alist-get 'name data) (alist-get 'id data))
+               :name (neoment-storage--room-name-from-json data)
                :aliases (alist-get 'aliases data)
                :topic (or (alist-get 'topic data) "")
                :tombstone (and (alist-get 'tombstone data)
@@ -346,6 +362,7 @@ Each alist maps a name (string) to non-nil when folded."
   "Return the JSON form of the invited ROOM."
   `((id . ,(neoment-invited-room-id room))
     (name . ,(neoment-invited-room-name room))
+    (alias . ,(or (neoment-invited-room-alias room) :null))
     (topic . ,(or (neoment-invited-room-topic room) ""))
     (members . ,(neoment-invited-room-members room))
     (avatar_url . ,(or (neoment-invited-room-avatar-url room) :null))))
@@ -355,6 +372,7 @@ Each alist maps a name (string) to non-nil when folded."
   (neoment-invited-room--create
    :id (alist-get 'id data)
    :name (or (alist-get 'name data) (alist-get 'id data))
+   :alias (alist-get 'alias data)
    :topic (or (alist-get 'topic data) "")
    :members (mapcar (lambda (p) (cons (symbol-name (car p)) (cdr p)))
                     (alist-get 'members data))

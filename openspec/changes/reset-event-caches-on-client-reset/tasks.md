@@ -18,5 +18,5 @@
 
 ## Workflow follow-up
 
-- Reference issue #23 in the PR so merging it closes the issue.
+- Reference issues #23 and #55 in the PR so merging it closes both.
 - Archive the change after merge and sync the `session-management` spec.

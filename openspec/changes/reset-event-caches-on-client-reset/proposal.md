@@ -7,7 +7,7 @@ The reply-preview cache and the profile-request tracker in `neoment-events.el` a
 ## What Changes
 
 - Every client reset (login, logout, session expiry, session restore, failed OAuth login) clears the cached reply previews and the profile requests marked as in flight.
-- A reply or profile response that the previous client asked for, and that arrives after the reset, does not write to or remove anything from the new client's caches. Today the profile callback clears its in-flight marker before it checks the client, so a late response can remove the marker of a request the new client just started.
+- A reply or profile response that the previous client asked for, and that arrives after the reset, does not write to or remove anything from the new client's caches. Today the profile callback clears its in-flight marker before it checks the client, so a late response can remove the marker of a request the new client just started (issue #55).
 - Out of scope: other module-level state (`neoment-notify--*`, which already follows its own client; `neoment-media--downloads`; render caches such as `neoment-room--code-cache` that hold no account data).
 
 ## Capabilities

@@ -80,7 +80,9 @@ REPLY-TO is the event id replied to and REPLY-SENDER the user id of its
 sender, THREAD-ROOT-ID the thread, REPLACE the event id being edited
 and ATTACHMENT a plist.
 `m.mentions' lists the body mentions, then REPLY-SENDER unless it is
-already listed or is the current user."
+already listed or is the current user.  With REPLACE it goes only in
+`m.new_content'.  A thread message is marked `is_falling_back' only
+when it is not a real reply."
   (let* ((html (neoment-compose--html-with-mentions body))
          (mentions (cdr html))
          (content `((msgtype . "m.text")
@@ -96,7 +98,7 @@ already listed or is the current user."
     (let ((relates nil))
       (when thread-root-id
         (setq relates `((rel_type . "m.thread") (event_id . ,thread-root-id)
-                        (is_falling_back . t))))
+                        ,@(unless reply-to '((is_falling_back . t))))))
       (when reply-to
         (setq relates (append relates `((m.in_reply_to . ((event_id . ,reply-to)))))))
       (when relates
@@ -123,7 +125,7 @@ already listed or is the current user."
                                         callback)
   "Send BODY to ROOM-ID, see `neoment-compose-message-content'.
 REPLY-TO, REPLY-SENDER, THREAD-ROOT-ID, REPLACE and ATTACHMENT are
-passed to it, so REPLY-SENDER is added to `m.mentions'.
+passed to it unchanged.
 On success the room's fully read marker moves to the new event, so
 the user's own message never shows as new.  CALLBACK, if non-nil,
 receives the result."
@@ -276,13 +278,19 @@ Nothing happens when the message is empty and there is no attachment."
         (attachment neoment-compose--attachment))
     (unless (and (null attachment) (string-blank-p body))
       (let* ((relation neoment-compose--relation)
-             (message (plist-get relation :message)))
+             (message (plist-get relation :message))
+             (replied (and message (neoment-message-replying-to message))))
         (neoment-compose-send
          neoment--room-id body
          :reply-to (and (eq (plist-get relation :type) 'reply)
                         (neoment-message-effective-id message))
-         :reply-sender (and (eq (plist-get relation :type) 'reply)
-                            (neoment-message-sender message))
+         ;; An edit of a reply keeps mentioning the replied-to sender
+         ;; in `m.new_content'.
+         :reply-sender (pcase (plist-get relation :type)
+                         ('reply (neoment-message-sender message))
+                         ('replace (and replied
+                                        (not (neoment-message-placeholder replied))
+                                        (neoment-message-sender replied))))
          :replace (and (eq (plist-get relation :type) 'replace)
                        (neoment-message-effective-id message))
          :thread-root-id neoment-compose--thread-root-id

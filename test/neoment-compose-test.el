@@ -132,7 +132,7 @@
     (should (equal (alist-get 'm.relates_to
                               (neoment-compose-message-content "x" :thread-root-id "$root"
                                                                :reply-to "$r"))
-                   '((rel_type . "m.thread") (event_id . "$root") (is_falling_back . t)
+                   '((rel_type . "m.thread") (event_id . "$root")
                      (m.in_reply_to . ((event_id . "$r"))))))
     ;; Edit.
     (let ((c (neoment-compose-message-content "fixed" :replace "$m")))
@@ -215,16 +215,42 @@
                      '((rel_type . "m.thread") (event_id . "$root") (is_falling_back . t))))
       (should-not (alist-get 'm.mentions content)))))
 
-;; Editing someone else's message does not mention them.
-(ert-deftest neoment-compose-edit-no-sender-mention ()
+;; A real reply inside a thread is not a fallback, so clients show it as a reply.
+(ert-deftest neoment-compose-thread-reply-mentions-sender ()
   (neoment-compose-test
     (let ((content (neoment-compose-test-send
-                    "fixed" :relation
-                    (list :type 'replace
-                          :message (neoment-message--create :id "$m" :sender "@bob:s"
-                                                            :content "x")))))
+                    "ok" :thread-root-id "$root"
+                    :relation (list :type 'reply
+                                    :message (neoment-message--create
+                                              :id "$r" :sender "@bob:s" :content "x")))))
+      (should (equal (alist-get 'm.mentions content) '((user_ids . ["@bob:s"]))))
+      (should (equal (alist-get 'm.relates_to content)
+                     '((rel_type . "m.thread") (event_id . "$root")
+                       (m.in_reply_to . ((event_id . "$r")))))))))
+
+(defun neoment-compose-test-edit (replied)
+  "Edit the user's own reply to REPLIED; return the sent content."
+  (neoment-compose-test-send
+   "fixed" :relation
+   (list :type 'replace
+         :message (neoment-message--create :id "$m" :sender "@me:s" :content "x"
+                                           :replying-to replied))))
+
+;; Editing a reply keeps the replied-to sender in `m.new_content' only.
+(ert-deftest neoment-compose-edit-reply-keeps-sender-mention ()
+  (neoment-compose-test
+    (let ((content (neoment-compose-test-edit
+                    (neoment-message--create :id "$orig" :sender "@bob:s" :content "q"))))
       (should-not (alist-get 'm.mentions content))
-      (should-not (alist-get 'm.mentions (alist-get 'm.new_content content))))))
+      (should (equal (alist-get 'm.mentions (alist-get 'm.new_content content))
+                     '((user_ids . ["@bob:s"])))))))
+
+(ert-deftest neoment-compose-edit-no-reply-no-mentions ()
+  (neoment-compose-test
+    (dolist (replied (list nil (neoment-message--create :id "$orig" :placeholder t)))
+      (let ((content (neoment-compose-test-edit replied)))
+        (should-not (alist-get 'm.mentions content))
+        (should-not (alist-get 'm.mentions (alist-get 'm.new_content content)))))))
 
 (provide 'neoment-compose-test)
 ;;; neoment-compose-test.el ends here

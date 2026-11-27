@@ -22,7 +22,7 @@ Messages with msgtype `m.image`, `m.file`, `m.audio` or `m.video`, and `m.sticke
 - **THEN** it has a location attachment whose url is `https://maps.google.com/?q=1.5,-2`
 
 #### Scenario: Location with an unusable geo_uri
-- **WHEN** an `m.location` message has `geo_uri` `5`, `""`, `foo`, `geo:` or `geo:-,-`
+- **WHEN** an `m.location` message has `geo_uri` `5`, `""`, `foo`, `geo:`, `geo:-,-` or `xgeo:1,2`
 - **THEN** it has no attachment
 
 #### Scenario: Edit with an unusable geo_uri keeps the location

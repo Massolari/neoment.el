@@ -27,4 +27,5 @@ Issue #21: `m.location` messages carry `geo_uri`, not `url`, so the old `(and ty
 
 - `neoment-events.el`: new `neoment-events--geo-url`; `neoment-events--attachment` and `neoment-events--content-attachment` use it.
 - `test/neoment-events-test.el`: `neoment-events-attachments` location case, plus new negative assertions.
-- `openspec/specs/matrix-events/spec.md`: updated on archive. If `apply-attachment-from-edits` is archived first, this delta still applies cleanly, because it only modifies "Attachments".
+- `openspec/specs/matrix-events/spec.md`: updated on archive. This delta only modifies "Attachments", so it applies in either archive order with `apply-attachment-from-edits`.
+- `openspec/changes/apply-attachment-from-edits/specs/matrix-events/spec.md`: its "Edits carry attachments" and "Location messages have an attachment" requirements said only "a `geo_uri`" (and "a `url`" for media). They are reworded to "a `geo_uri` of the form `geo:lat,lon` (as defined in Attachments)" and "an mxc `url`", so the archived spec does not contradict itself.

@@ -129,11 +129,8 @@ When it is not known yet, return a placeholder and fetch the event."
     (cond
      (entry
       (let ((replied (plist-get entry :message)))
-        (if (neoment-message-placeholder replied)
-            (plist-put entry :waiting (cons message (plist-get entry :waiting)))
-          (setf (neoment-message-mentions message)
-                (append (neoment-message-mentions message)
-                        (neoment-message-mentions replied))))
+        (when (neoment-message-placeholder replied)
+          (plist-put entry :waiting (cons message (plist-get entry :waiting))))
         replied))
      (t
       (let ((placeholder (neoment-message--create :id event-id :placeholder t))
@@ -155,11 +152,7 @@ When it is not known yet, return a placeholder and fetch the event."
                (if fetched
                    (progn
                      (neoment-events--fill-message placeholder fetched)
-                     (setf (neoment-message-id placeholder) event-id)
-                     (dolist (waiting (plist-get entry :waiting))
-                       (setf (neoment-message-mentions waiting)
-                             (append (neoment-message-mentions waiting)
-                                     (neoment-message-mentions placeholder)))))
+                     (setf (neoment-message-id placeholder) event-id))
                  ;; The replied event is unavailable: show no reply.
                  (remhash key neoment-events--reply-cache)
                  (dolist (waiting (plist-get entry :waiting))

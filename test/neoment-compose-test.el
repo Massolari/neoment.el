@@ -132,7 +132,7 @@
     (should (equal (alist-get 'm.relates_to
                               (neoment-compose-message-content "x" :thread-root-id "$root"
                                                                :reply-to "$r"))
-                   '((rel_type . "m.thread") (event_id . "$root") (is_falling_back . t)
+                   '((rel_type . "m.thread") (event_id . "$root")
                      (m.in_reply_to . ((event_id . "$r"))))))
     ;; Edit.
     (let ((c (neoment-compose-message-content "fixed" :replace "$m")))
@@ -169,6 +169,88 @@
         (should (equal (neoment-json-get (plist-get (car neoment-test--requests) :json)
                                          'm.relates_to 'm.in_reply_to 'event_id)
                        "$orig"))))))
+
+;;;; Reply mentions
+
+(defun neoment-compose-test-send (text &rest open-args)
+  "Send TEXT from a compose buffer opened with OPEN-ARGS; return the content."
+  (save-window-excursion
+    (with-current-buffer (apply #'neoment-compose-open "!r:s" open-args)
+      (insert text)
+      (neoment-compose-send-and-close)))
+  (plist-get (car neoment-test--requests) :json))
+
+(defun neoment-compose-test-reply (text sender)
+  "Reply TEXT to a message from SENDER; return the sent content."
+  (neoment-compose-test-send
+   text :relation (list :type 'reply
+                        :message (neoment-message--create :id "$orig" :sender sender
+                                                          :content "x"))))
+
+(ert-deftest neoment-compose-reply-mentions-sender ()
+  (neoment-compose-test
+    (should (equal (alist-get 'm.mentions (neoment-compose-test-reply "ok" "@bob:s"))
+                   '((user_ids . ["@bob:s"]))))))
+
+(ert-deftest neoment-compose-reply-sender-merged-with-body-mentions ()
+  (neoment-compose-test
+    (should (equal (alist-get 'm.mentions (neoment-compose-test-reply "hi @alice:s" "@bob:s"))
+                   '((user_ids . ["@alice:s" "@bob:s"]))))))
+
+(ert-deftest neoment-compose-reply-sender-already-mentioned ()
+  (neoment-compose-test
+    (should (equal (alist-get 'm.mentions (neoment-compose-test-reply "hi @bob:s" "@bob:s"))
+                   '((user_ids . ["@bob:s"]))))))
+
+(ert-deftest neoment-compose-reply-to-own-message-no-mentions ()
+  (neoment-compose-test
+    (let ((content (neoment-compose-test-reply "ok" "@me:s")))
+      (should (alist-get 'm.relates_to content))
+      (should-not (alist-get 'm.mentions content)))))
+
+(ert-deftest neoment-compose-thread-without-reply-no-mentions ()
+  (neoment-compose-test
+    (let ((content (neoment-compose-test-send "ok" :thread-root-id "$root")))
+      (should (equal (alist-get 'm.relates_to content)
+                     '((rel_type . "m.thread") (event_id . "$root") (is_falling_back . t))))
+      (should-not (alist-get 'm.mentions content)))))
+
+;; A real reply inside a thread is not a fallback, so clients show it as a reply.
+(ert-deftest neoment-compose-thread-reply-mentions-sender ()
+  (neoment-compose-test
+    (let ((content (neoment-compose-test-send
+                    "ok" :thread-root-id "$root"
+                    :relation (list :type 'reply
+                                    :message (neoment-message--create
+                                              :id "$r" :sender "@bob:s" :content "x")))))
+      (should (equal (alist-get 'm.mentions content) '((user_ids . ["@bob:s"]))))
+      (should (equal (alist-get 'm.relates_to content)
+                     '((rel_type . "m.thread") (event_id . "$root")
+                       (m.in_reply_to . ((event_id . "$r")))))))))
+
+(defun neoment-compose-test-edit (replied)
+  "Edit the user's own reply to REPLIED; return the sent content."
+  (neoment-compose-test-send
+   "fixed" :relation
+   (list :type 'replace
+         :message (neoment-message--create :id "$m" :sender "@me:s" :content "x"
+                                           :replying-to replied))))
+
+;; Editing a reply keeps the replied-to sender in `m.new_content' only.
+(ert-deftest neoment-compose-edit-reply-keeps-sender-mention ()
+  (neoment-compose-test
+    (let ((content (neoment-compose-test-edit
+                    (neoment-message--create :id "$orig" :sender "@bob:s" :content "q"))))
+      (should-not (alist-get 'm.mentions content))
+      (should (equal (alist-get 'm.mentions (alist-get 'm.new_content content))
+                     '((user_ids . ["@bob:s"])))))))
+
+(ert-deftest neoment-compose-edit-no-reply-no-mentions ()
+  (neoment-compose-test
+    (dolist (replied (list nil (neoment-message--create :id "$orig" :placeholder t)))
+      (let ((content (neoment-compose-test-edit replied)))
+        (should-not (alist-get 'm.mentions content))
+        (should-not (alist-get 'm.mentions (alist-get 'm.new_content content)))))))
 
 (provide 'neoment-compose-test)
 ;;; neoment-compose-test.el ends here
